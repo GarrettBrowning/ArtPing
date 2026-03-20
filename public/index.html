@@ -4,58 +4,67 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ArtPing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <h1>Welcome to ArtPing!</h1>
-  <h3>header 3</h3>
-  <ul>
-    <li><a href="register.html">register</a></li>
-    <li><a href="login.html">login</a></li>
-    <li><a href="upload.html">upload</a></li>
-  </ul>
-<button>
-  <a href="index.html">Logout</a>
-</button>
+  <div class="app">
+    <nav class="nav">
+      <span class="nav-logo">ArtPing</span>
+      <div class="nav-links">
+        <a href="upload.html">Upload</a>
+        <a href="login.html">Login</a>
+        <a href="register.html">Register</a>
+        <button id="logout" class="btn-ghost">Logout</button>
+      </div>
+    </nav>
 
+    <header class="hero">
+      <p class="hero-eyebrow">Your creative space</p>
+      <h1 class="hero-title">Welcome to<br><em>ArtPing</em></h1>
+      <p class="hero-sub">Share your artwork with the world.</p>
+      <div id="welcome-msg" class="welcome-msg"></div>
+      <div class="hero-actions">
+        <a href="register.html" class="btn-primary">Get Started</a>
+        <a href="login.html" class="btn-outline">Sign In</a>
+      </div>
+    </header>
+  </div>
 
-  
   <script>
-  const params = new URLSearchParams(window.location.search);
-  const user = params.get('user');
-  const newuser = params.get('newuser');
+    const params = new URLSearchParams(window.location.search);
+    const user = params.get('user');
+    const newuser = params.get('newuser');
+    const msg = document.getElementById('welcome-msg');
 
-  if (user) {
-    const msg = document.createElement('p');
-    msg.textContent = `Welcome back, ${user}!`;
-    document.body.prepend(msg);
-  } else if (newuser) {
-    const msg = document.createElement('p');
-    msg.textContent = `Welcome to ArtPing, ${newuser}! Your account has been created.`;
-    document.body.prepend(msg);
-  }
-</script>
-<script>
-document.getElementById("logout").addEventListener("click", async () => {
-  const res = await fetch("/api/logout", { method: "POST" });
-  if (res.ok) {
-    // reload the page or redirect to login
-    location.href = "/login.html";
-  } else {
-    alert("Logout failed");
-  }
-});
-</script>
+    if (user) {
+      msg.textContent = `Welcome back, ${user}!`;
+      msg.classList.add('visible');
+    } else if (newuser) {
+      msg.textContent = `Welcome to ArtPing, ${newuser}! Your account has been created.`;
+      msg.classList.add('visible');
+    }
 
-</script>
-<script>
-(async () => {
-  const res = await fetch("/api/me");
-  const { user } = await res.json();
-  const msg = document.createElement("p");
-  msg.textContent = user
-    ? `Welcome back, ${user.username}!`:
-  document.body.prepend(msg);
-})();
-</script>
+    document.getElementById("logout").addEventListener("click", async () => {
+      const res = await fetch("/api/logout", { method: "POST" });
+      if (res.ok) {
+        location.href = "/login.html";
+      } else {
+        alert("Logout failed");
+      }
+    });
+
+    (async () => {
+      try {
+        const res = await fetch("/api/me");
+        const { username } = await res.json();
+        if (username && !user && !newuser) {
+          msg.textContent = `Welcome back, ${username}!`;
+          msg.classList.add('visible');
+        }
+      } catch (e) {}
+    })();
+  </script>
 </body>
 </html>

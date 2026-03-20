@@ -1,23 +1,41 @@
-<form action="/api/login" method="POST">
-  <div class="imgcontainer">
-    <img src="img_avatar2.png" alt="Avatar" class="avatar">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-brand">
+      <a href="index.html" class="nav-logo">ArtPing</a>
+      <p>Your creative space.</p>
+    </div>
+
+    <div class="auth-card">
+      <h2 class="auth-title">Sign In</h2>
+      <p class="auth-sub">Don't have an account? <a href="register.html">Register</a></p>
+
+      <form action="/api/login" method="POST" class="auth-form">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="Enter username" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Enter password" required>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" name="remember" checked> Remember me
+        </label>
+        <button type="submit" class="btn-primary full-width">Login</button>
+        <button type="button" class="btn-outline full-width" onclick="location.href='index.html'">Cancel</button>
+        <p class="forgot"><a href="#">Forgot password?</a></p>
+      </form>
+    </div>
   </div>
-
-  <div class="container">
-    <label for="username"><b>Username</b></label>
-    <input type="text" placeholder="Enter Username" name="username" required>
-
-    <label for="password"><b>Password</b></label>
-    <input type="password" placeholder="Enter Password" name="password" required>
-
-    <button type="submit">Login</button>
-    <label>
-      <input type="checkbox" checked="checked" name="remember"> Remember me
-    </label>
-  </div>
-
-  <div class="container" style="background-color:#f1f1f1">
-    <button type="button" class="cancelbtn">Cancel</button>
-    <span class="psw">Forgot <a href="#">password?</a></span>
-  </div>
-</form>
+</body>
+</html>

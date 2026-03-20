@@ -1,47 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content=""IE-edge>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/style.css">
-    <title>Document</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing — Upload</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <div class="app">
+    <nav class="nav">
+      <a href="index.html" class="nav-logo">ArtPing</a>
+      <div class="nav-links">
+        <a href="upload.html" class="active">Upload</a>
+        <a href="login.html">Login</a>
+        <a href="register.html">Register</a>
+      </div>
+    </nav>
 
-    <main class="upload_container">
-
-      <div class="header">
+    <main class="upload-container">
+      <div class="upload-header">
         <h2>Upload Images</h2>
         <div class="server-message"></div>
       </div>
-      
+
       <div class="input-div">
-        <p>Upload Image here or just <span class="browse">browse</span></p>
-        <input type="file" class="file" multiple="multiple" accept="image/png, image/jpeg, image.jpg">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+        <p>Drop images here or <span class="browse">browse</span></p>
+        <span class="upload-hint">PNG, JPG up to 10MB</span>
+        <input type="file" class="file" multiple accept="image/png, image/jpeg, image/jpg">
       </div>
 
-      <form id="saved-form">
-        <div class="header">
-            <h3>Congratulations! Your art has been posted!</h3>
-            <button type="submit">Delete</button>
-        </div>
-        <div class="saved-div"></div> 
-      </form>
-
       <form id="queued-form">
-        <div class="header">
-          <h3>Placeholder</h3>
-          <button type="submit">Upload</button>
+        <div class="section-header">
+          <h3>Queued</h3>
+          <button type="submit" class="btn-primary">Upload All</button>
         </div>
         <div class="queued-div"></div>
       </form>
 
-     
+      <form id="saved-form">
+        <div class="section-header">
+          <h3>Posted</h3>
+          <button type="submit" class="btn-ghost">Delete Selected</button>
+        </div>
+        <div class="saved-div"></div>
+      </form>
     </main>
+  </div>
 
-    <script>
-      let queuedImagesArray = [],
+  <script>
+    let queuedImagesArray = [],
       savedForm = document.querySelector("#saved-form"),
       queuedForm = document.querySelector("#queued-form"),
       savedDiv = document.querySelector(".saved-div"),
@@ -50,15 +60,10 @@
       serverMessage = document.querySelector(".server-message"),
       deleteImages = [];
 
-      // Saved in server images
-
-      // Queued in frontend images
-      input.addEventListener("change", () => {
-        const files = input.files
-        console.log(files)
-      })
-
-    </script>
-    
+    input.addEventListener("change", () => {
+      const files = input.files;
+      console.log(files);
+    });
+  </script>
 </body>
 </html>
