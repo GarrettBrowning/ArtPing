@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing</title>
+</head>
+<body>
+  <h1>Welcome to ArtPing!</h1>
+  <h3>header 3</h3>
+  <ul>
+    <li><a href="register.html">register</a></li>
+    <li><a href="login.html">login</a></li>
+    <li><a href="upload.html">upload</a></li>
+  </ul>
+<button>
+  <a href="index.html">Logout</a>
+</button>
+
+
+  
+  <script>
+  const params = new URLSearchParams(window.location.search);
+  const user = params.get('user');
+  const newuser = params.get('newuser');
+
+  if (user) {
+    const msg = document.createElement('p');
+    msg.textContent = `Welcome back, ${user}!`;
+    document.body.prepend(msg);
+  } else if (newuser) {
+    const msg = document.createElement('p');
+    msg.textContent = `Welcome to ArtPing, ${newuser}! Your account has been created.`;
+    document.body.prepend(msg);
+  }
+</script>
+<script>
+document.getElementById("logout").addEventListener("click", async () => {
+  const res = await fetch("/api/logout", { method: "POST" });
+  if (res.ok) {
+    // reload the page or redirect to login
+    location.href = "/login.html";
+  } else {
+    alert("Logout failed");
+  }
+});
+</script>
+
+</script>
+<script>
+(async () => {
+  const res = await fetch("/api/me");
+  const { user } = await res.json();
+  const msg = document.createElement("p");
+  msg.textContent = user
+    ? `Welcome back, ${user.username}!`:
+  document.body.prepend(msg);
+})();
+</script>
+</body>
+</html>
