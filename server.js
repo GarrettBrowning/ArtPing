@@ -16,9 +16,6 @@ app.use(express.urlencoded({ extended: true }));
 // Cookie parser middleware (must be registered before routes that access req.cookies)
 app.use(cookieParser());
 // Connect to MongoDB
-app.listen(port, () => {
-  console.log(`Example app listening at http://localhost:${port}`);
-});
 mongoose.connect('mongodb://localhost:27017/ArtPing')
 .then(() => console.log('Connected to MongoDB at mongodb://localhost:27017/ArtPing'))
 .catch((err) => console.error('MongoDB connection error:', err));
@@ -28,6 +25,14 @@ app.use(session({
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: 'mongodb://localhost:27017/ArtPing' }),
 }));
+
+function isAuthenticated(req, res, next) {
+  if (req.session && req.session.userID) {
+    req.user = { id: req.session.userID, username: req.session.username };
+    return next();
+  }
+  return res.status(401).send('No');
+}
 
 // Simple Mongoose User schema/model (used by register/login)
 const userSchema = new mongoose.Schema({
@@ -54,9 +59,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/secret',
-  (req, res, next) => { if (!req.user) return res.status(401).send('No'); next(); },
-  (req, res) => { res.send('Welcome'); 
+app.get('/secret', isAuthenticated, (req, res) => {
+  res.send('Welcome');
 });
 // Registration route with password hashing
 app.post('/api/register', async (req, res) => {
@@ -128,4 +132,7 @@ app.post("/api/logout", (req, res) => {
     res.clearCookie("connect.sid"); 
     res.json({ ok: true });
   });
+});
+app.listen(port, () => {
+  console.log(`Example app listening at http://localhost:${port}`);
 });
