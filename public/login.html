@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
+
 <body>
   <div class="auth-page">
     <div class="auth-brand">
@@ -19,7 +20,9 @@
       <h2 class="auth-title">Sign In</h2>
       <p class="auth-sub">Don't have an account? <a href="register.html">Register</a></p>
 
-      <form action="/api/login" method="POST" class="auth-form">
+      <p id="error-msg" style="color: red; display: none;"></p>
+      <form id="login-form" class="auth-form">
+
         <div class="field">
           <label for="username">Username</label>
           <input type="text" id="username" name="username" placeholder="Enter username" required>
@@ -37,5 +40,31 @@
       </form>
     </div>
   </div>
+
+<script>
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const errorMsg = document.getElementById('error-msg');
+
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      location.href = `/index.html?user=${encodeURIComponent(data.username)}`;
+    } else {
+      const text = await res.text();
+      errorMsg.textContent = text;
+      errorMsg.style.display = 'block';
+    }
+  });
+</script>
+
 </body>
 </html>

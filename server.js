@@ -36,6 +36,7 @@ function isAuthenticated(req, res, next) {
 
 // Simple Mongoose User schema/model (used by register/login)
 const userSchema = new mongoose.Schema({
+  email: { type: String, unique: true, required: true },
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
 }, { timestamps: true });
@@ -64,25 +65,29 @@ app.get('/secret', isAuthenticated, (req, res) => {
 });
 // Registration route with password hashing
 app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body || {};
-  console.log('BODY', { username });
-  if (!username || !password) return res.status(400).send('username and password required');
+  const { email, username, password } = req.body || {};
+  const normalizedEmail = email.toLowerCase();
+  console.log('BODY', { email, username, password });
+  if (!email || !username || !password) return res.status(400).send('All fields required');
 
   try {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const newUser = new User({ username, password: hashedPassword });
+    const newUser = new User({ email: normalizedEmail, username, password: hashedPassword });
     await newUser.save();
 
     const allUsers = await User.find({});
     console.log("All users in DB:", allUsers);
 
-    return res.redirect(`/index.html?newuser=${encodeURIComponent(username)}`);
+    return res.json({ username: newUser.username });
  
   } catch (error) {
     console.error('Registration error:', error);
-    if (error.code === 11000) return res.status(409).send('Username already exists');
+    if (error.code === 11000) {
+  const field = Object.keys(error.keyValue)[0];
+  return res.status(409).send(`${field} already exists`);
+}
     res.status(500).send('An error occurred during registration');
   }
 });
@@ -103,7 +108,7 @@ app.post('/api/login', async (req, res) => {
     
     return req.session.save(err => {
       if (err) return res.status(500).send('Login error');
-      return res.redirect(`/index.html?user=${encodeURIComponent(user.username)}`);
+      return res.json({ username: user.username });
     });
       }
       

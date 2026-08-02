@@ -19,7 +19,9 @@
       <h2 class="auth-title">Create Account</h2>
       <p class="auth-sub">Already have an account? <a href="login.html">Sign in</a></p>
 
-      <form action="/api/register" method="POST" class="auth-form">
+      <p id="error-msg" style="color: red; display: none;"></p>
+      <form id="register-form" class="auth-form">
+
         <div class="field">
           <label for="email">Email</label>
           <input type="text" id="email" name="email" placeholder="Enter email" required>
@@ -46,5 +48,36 @@
       </form>
     </div>
   </div>
+<script>
+  document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const passwordRepeat = document.getElementById('password-repeat').value;
+    const email = document.getElementById('email').value;
+    const errorMsg = document.getElementById('error-msg');
+
+    if (password !== passwordRepeat) {
+      errorMsg.textContent = 'Passwords do not match';
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, username, password })
+    });
+
+    if (res.ok) {
+      location.href = `/index.html?newuser=${encodeURIComponent(username)}`;
+    } else {
+      const text = await res.text();
+      errorMsg.textContent = text;
+      errorMsg.style.display = 'block';
+    }
+  });
+</script>
 </body>
 </html>
