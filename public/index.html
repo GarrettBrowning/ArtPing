@@ -13,6 +13,7 @@
     <nav class="nav">
       <span class="nav-logo">ArtPing</span>
       <div class="nav-links">
+        <a id="profile-link" href="#" style="display:none;">Profile</a>
         <a href="upload.html">Upload</a>
         <a href="login.html">Login</a>
         <a href="register.html">Register</a>
@@ -55,16 +56,21 @@
       }
     });
 
-    (async () => {
-      try {
-        const res = await fetch("/api/me");
-        const { username } = await res.json();
-        if (username && !user && !newuser) {
-          msg.textContent = `Welcome back, ${username}!`;
-          msg.classList.add('visible');
-        }
-      } catch (e) {}
-    })();
+(async () => {
+  try {
+    const res = await fetch("/api/me");
+    const { username } = await res.json();
+    if (username) {
+      const profileLink = document.getElementById('profile-link');
+      profileLink.href = `/profile.html?username=${encodeURIComponent(username)}`;
+      profileLink.style.display = 'inline';
+    }
+    if (username && !user && !newuser) {
+      msg.textContent = `Welcome back, ${username}!`;
+      msg.classList.add('visible');
+    }
+  } catch (e) {}
+})();
   </script>
 </body>
 </html>

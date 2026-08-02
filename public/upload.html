@@ -21,112 +21,107 @@
 
     <main class="upload-container">
       <div class="upload-header">
-        <h2>Upload Images</h2>
+        <h2>Upload Artwork</h2>
         <div class="server-message"></div>
       </div>
 
-      <div class="input-div">
+      <div class="input-div" id="drop-zone">
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-        <p>Drop images here or <span class="browse">browse your images.</span></p>
+        <p>Drop image here or <span class="browse">browse</span></p>
         <span class="upload-hint">PNG, JPG up to 10MB</span>
-        <input type="file" class="file" multiple accept="image/png, image/jpeg, image/jpg">
+        <input type="file" class="file" id="file-input" accept="image/png, image/jpeg, image/jpg">
       </div>
 
-      <form id="queued-form">
-        <div class="section-header">
-          <h3>Queued</h3>
-          <button type="submit" class="btn-primary">Upload All</button>
+      <div id="preview-container" style="display:none;">
+        <div class="queued-div">
+          <div class="image">
+            <img id="preview-img" src="" alt="preview">
+            <span id="remove-btn">&times;</span>
+          </div>
         </div>
-        <div class="queued-div"></div>
-      </form>
 
-      <form id="saved-form">
-        <div class="section-header">
-          <h3>Posted</h3>
-          <button type="submit" class="btn-ghost">Delete Selected</button>
-        </div>
-        <div class="saved-div"></div>
-      </form>
+        <form id="upload-form" class="auth-form" style="margin-top: 24px;">
+          <div class="field">
+            <label for="title">Title</label>
+            <input type="text" id="title" name="title" placeholder="Enter a title" required>
+          </div>
+          <div class="field">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" placeholder="Optional description">
+          </div>
+          <div class="auth-actions">
+            <button type="button" class="btn-outline" id="cancel-btn">Cancel</button>
+            <button type="submit" class="btn-primary">Upload</button>
+          </div>
+        </form>
+      </div>
     </main>
   </div>
 
   <script>
-    let queuedImagesArray = [],
-      savedForm = document.querySelector("#saved-form"),
-      queuedForm = document.querySelector("#queued-form"),
-      savedDiv = document.querySelector(".saved-div"),
-      queuedDiv = document.querySelector(".queued-div"),
-      inputDiv = document.querySelector(".input-div"),
-      input = document.querySelector(".input-div input")
-      serverMessage = document.querySelector(".server-message"),
-      deleteImages = [];
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const previewContainer = document.getElementById('preview-container');
+    const previewImg = document.getElementById('preview-img');
+    const removeBtn = document.getElementById('remove-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const uploadForm = document.getElementById('upload-form');
+    const serverMessage = document.querySelector('.server-message');
+    let selectedFile = null;
 
-    input.addEventListener("change", () => {
-      const files = input.files
-      for(let i = 0; i < files.length;i++){
-        queuedImagesArray.push(files[i])
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) showPreview(fileInput.files[0]);
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.match('image')) showPreview(file);
+    });
+
+    dropZone.addEventListener('dragover', (e) => e.preventDefault());
+
+    function showPreview(file) {
+      selectedFile = file;
+      previewImg.src = URL.createObjectURL(file);
+      previewContainer.style.display = 'block';
+    }
+
+    function clearPreview() {
+      selectedFile = null;
+      previewImg.src = '';
+      previewContainer.style.display = 'none';
+      fileInput.value = '';
+      uploadForm.reset();
+    }
+
+    removeBtn.addEventListener('click', clearPreview);
+    cancelBtn.addEventListener('click', clearPreview);
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!selectedFile) return;
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+      formData.append('title', document.getElementById('title').value);
+      formData.append('description', document.getElementById('description').value);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        serverMessage.textContent = 'Upload successful!';
+        serverMessage.style.cssText = 'background-color: #d4edda; color: #155724; padding: 10px 16px; border-radius: 4px;';
+        clearPreview();
+      } else {
+        const text = await res.text();
+        serverMessage.textContent = text;
+        serverMessage.style.cssText = 'background-color: #f8d7da; color: #b71c1c; padding: 10px 16px; border-radius: 4px;';
       }
-      queuedForm.reset()
-     displayQueuedImages()
-    })
-
-    inputDiv.addEventListener("drop", (e) => {
-      e.preventDefault()
-      const files = e.dataTransfer.files
-      for(let i = 0; i < files.length;i++){
-        if(!files[i].type.match("image")) continue
-
-        if(queuedImagesArray.every(image => image.name !== files[i].name))
-          queuedImagesArray.push(files[i])
-      }
-      displayQueuedImages()
-    })
-
-    function displayQueuedImages(){
-      let images = ""
-      queuedImagesArray.forEach((image, index) => {
-        images += `<div class="image">
-                    <img src="${URL.createObjectURL(image)}" alt="image">
-                    <span onclick="deleteQueuedImage(${index})">&times;</span>
-                  </div>`
-      })
-      queuedDiv.innerHTML = images
-    }
-
-    function deleteQueuedImage(index){
-      queuedImagesArray.splice(index, 1)
-      displayQueuedImages()
-    }
-
-    queuedForm.addEventListener("submit", (e) => {
-      e.preventDefault()
-      sendQueuedImagesToServer()
-    })
-
-    function sendQueuedImagesToServer(){
-      const formData = new FormData(queuedForm)
-
-      queuedImagesArray.forEach((image, index) => {
-        formData.append(`file[${index}]`, image)
-      })
-
-      fetch("upload", {
-        method: "POST",
-        body : formData
-      })
-
-      .then(response => {
-        if(response.status !== 200) throw Error(response.statusText)
-        location.reload()
-      })
-
-      .catch(error => {
-        serverMessage.innerHTML = error
-        serverMessage.style.cssText = "background-color: #f8d7da; color: #b71c1c"
-      })
-    }
-
-
+    });
   </script>
 </body>
 </html>
