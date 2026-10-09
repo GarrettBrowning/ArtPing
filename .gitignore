@@ -1,3 +1,5 @@
+# Files and folders git should not track
 node_modules/
 .env
 public/uploads/
+NOTES.md

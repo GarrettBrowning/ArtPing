@@ -105,7 +105,7 @@
 
     // Load profile
     async function loadProfile() {
-      const res = await fetch(`/api/profile/${username}`);
+      const res = await fetch(`/api/profile/${encodeURIComponent(username)}`);
       if (!res.ok) {
         document.querySelector('main').innerHTML = '<p style="color: var(--ink-muted); margin-top: 40px;">Profile not found.</p>';
         return;
@@ -137,7 +137,7 @@
 
     // Load posts
     async function loadPosts() {
-      const res = await fetch(`/api/posts/${username}`);
+      const res = await fetch(`/api/posts/${encodeURIComponent(username)}`);
       if (!res.ok) return;
       const posts = await res.json();
       const grid = document.getElementById('posts-grid');
@@ -147,12 +147,13 @@
         return;
       }
 
+      // Post titles/descriptions are user input, so escape before inserting as HTML
       grid.innerHTML = posts.map(post => `
         <div class="post-card">
-          <img src="${post.filepath}" alt="${post.title}">
+          <img src="${escapeHtml(post.filepath)}" alt="${escapeHtml(post.title)}" loading="lazy">
           <div class="post-card-info">
-            <p class="post-title">${post.title}</p>
-            ${post.description ? `<p class="post-desc">${post.description}</p>` : ''}
+            <p class="post-title">${escapeHtml(post.title)}</p>
+            ${post.description ? `<p class="post-desc">${escapeHtml(post.description)}</p>` : ''}
           </div>
         </div>
       `).join('');

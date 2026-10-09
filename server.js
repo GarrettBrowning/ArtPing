@@ -8,7 +8,23 @@ const app = express();
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
-const port = 3000;
+const rateLimit = require('express-rate-limit');
+
+// Settings come from environment variables (.env locally, the host's settings in production).
+// See .env.example for the full list.
+const port = process.env.PORT || 3000;
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ArtPing';
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Without a real secret anyone could forge login sessions, so refuse to start
+if (!process.env.SESSION_SECRET) {
+  console.error('SESSION_SECRET is not set. Add it to .env (see .env.example) and restart.');
+  process.exit(1);
+}
+
+// Hosts put the app behind an HTTPS proxy; this lets Express see the real
+// client IP (for rate limiting) and know the connection was HTTPS (for secure cookies)
+app.set('trust proxy', 1);
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 // Routes demonstrating route params, query strings, middleware, and async handling
@@ -17,15 +33,38 @@ app.use(express.urlencoded({ extended: true }));
 // Cookie parser middleware (must be registered before routes that access req.cookies)
 app.use(cookieParser());
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/ArtPing')
-.then(() => console.log('Connected to MongoDB at mongodb://localhost:27017/ArtPing'))
+mongoose.connect(mongoUri)
+.then(() => console.log('Connected to MongoDB'))
 .catch((err) => console.error('MongoDB connection error:', err));
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'mysecret',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({ mongoUrl: 'mongodb://localhost:27017/ArtPing' }),
+  store: MongoStore.create({ mongoUrl: mongoUri }),
+  cookie: {
+    httpOnly: true,          // page scripts can't read the cookie
+    sameSite: 'lax',         // other sites can't send requests with it
+    secure: isProduction,    // HTTPS only in production (localhost uses plain HTTP)
+    maxAge: 1000 * 60 * 60 * 24 * 7, // stay logged in for 7 days
+  },
 }));
+
+// Slow down password guessing and mass account creation (limits are per IP address)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true, // only failed logins count toward the limit
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: 'Too many login attempts. Please wait 15 minutes and try again.',
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: 'Too many accounts created. Please try again in an hour.',
+});
 
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.userId) {
@@ -467,11 +506,13 @@ app.get('/secret', isAuthenticated, (req, res) => {
 });
 
 // Registration route with password hashing
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', registerLimiter, async (req, res) => {
   const { email, username, password } = req.body || {};
-  const normalizedEmail = email.toLowerCase();
-  console.log('BODY', { email, username, password });
-  if (!email || !username || !password) return res.status(400).send('All fields required');
+  // Must be plain text (not objects like {"$gt": ""}) and not empty
+  if (![email, username, password].every(v => typeof v === 'string' && v.trim())) {
+    return res.status(400).send('All fields required');
+  }
+  const normalizedEmail = email.trim().toLowerCase();
 
   try {
     const saltRounds = 10;
@@ -487,27 +528,28 @@ app.post('/api/register', async (req, res) => {
   });
 
   await newProfile.save();
-  console.log('Profile created:', newProfile);
-
-    const allUsers = await User.find({});
-    console.log("All users in DB:", allUsers);
+  console.log('New user registered:', newUser.username);
 
     return res.json({ username: newUser.username });
  
   } catch (error) {
-    console.error('Registration error:', error);
+    // Username/email already taken is expected, not a server error, so don't log it
     if (error.code === 11000) {
-  const field = Object.keys(error.keyValue)[0];
-  return res.status(409).send(`${field} already exists`);
-}
+      const field = Object.keys(error.keyValue)[0];
+      return res.status(409).send(`${field} already exists`);
+    }
+    console.error('Registration error:', error);
     res.status(500).send('An error occurred during registration');
   }
 });
 
 // Login route with password verification
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).send('username and password required');
+  // Must be plain text, so {"$gt": ""} can't be used to match any user
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+    return res.status(400).send('username and password required');
+  }
 
   try {
     const user = await User.findOne({ username });
@@ -515,17 +557,17 @@ app.post('/api/login', async (req, res) => {
 
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (passwordMatch) {
-      {
-    req.session.userId = user._id.toString();
-    req.session.username = user.username;
-    
-    return req.session.save(err => {
-      if (err) return res.status(500).send('Login error');
-      return res.json({ username: user.username });
-    });
-      }
-      
-  
+      // New session ID on login so a session ID planted before login can't be reused
+      return req.session.regenerate(err => {
+        if (err) return res.status(500).send('Login error');
+        req.session.userId = user._id.toString();
+        req.session.username = user.username;
+
+        req.session.save(err => {
+          if (err) return res.status(500).send('Login error');
+          return res.json({ username: user.username });
+        });
+      });
     } else {
       return res.status(401).send('Invalid credentials');
     }
