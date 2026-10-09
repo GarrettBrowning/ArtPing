@@ -53,6 +53,9 @@ const postSchema = new mongoose.Schema({
   filepath: { type: String, required: true },
 }, { timestamps: true });
 
+// Index for the feed so sorting by newest doesn't scan the whole collection
+postSchema.index({ createdAt: -1, _id: -1 });
+
 const Post = mongoose.model('Post', postSchema);
 
 //Profile schema for user profiles with custom details about their art or themselves
@@ -192,10 +195,51 @@ app.post('/api/profile/pfp', isAuthenticated, upload.single('pfp'), async (req, 
   }
 });
 
+//Feed route: all posts, newest first, paginated with a cursor
+// GET /api/feed?limit=20&before=<cursor from previous response>
+app.get('/api/feed', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
+    const filter = {};
+
+    // Cursor is "<createdAt ISO>_<postId>" of the last post on the previous page.
+    // Using _id as a tiebreaker keeps posts with identical timestamps from being skipped.
+    if (req.query.before) {
+      const [time, id] = String(req.query.before).split('_');
+      const date = new Date(time);
+      if (isNaN(date) || !mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).send('Invalid cursor');
+      }
+      filter.$or = [
+        { createdAt: { $lt: date } },
+        { createdAt: date, _id: { $lt: new mongoose.Types.ObjectId(id) } },
+      ];
+    }
+
+    // Fetch one extra to know whether there's another page
+    const posts = await Post.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .select('username title description filepath createdAt')
+      .lean();
+
+    const hasMore = posts.length > limit;
+    if (hasMore) posts.pop();
+
+    const last = posts[posts.length - 1];
+    const nextCursor = hasMore ? `${last.createdAt.toISOString()}_${last._id}` : null;
+
+    res.json({ posts, nextCursor });
+  } catch (error) {
+    console.error('Feed fetch error:', error);
+    res.status(500).send('An error occurred fetching the feed');
+  }
+});
+
 //Get posts by username
 app.get('/api/posts/:username', async (req, res) => {
   try {
-    const posts = await Post.find({ username: req.params.username });
+    const posts = await Post.find({ username: req.params.username }).sort({ createdAt: -1 });
     res.json(posts);
   } catch (error) {
     console.error('Post fetch error:', error);

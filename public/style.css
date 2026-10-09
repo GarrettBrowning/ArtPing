@@ -612,6 +612,14 @@ input[type="password"]:focus {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 600px) {
+  .nav {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    gap: 12px 18px;
+  }
   .profile-header {
     flex-direction: column;
     align-items: center;
@@ -620,4 +628,28 @@ input[type="password"]:focus {
   .posts-grid {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
+}
+/* ===== FEED ===== */
+.post-meta {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-top: 8px;
+}
+
+.post-meta a {
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.post-meta a:hover { color: var(--ink); }
+
+.feed-footer {
+  text-align: center;
+  padding-bottom: 60px;
+}
+
+.feed-status {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-top: 12px;
 }

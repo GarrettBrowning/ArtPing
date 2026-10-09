@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing — Feed</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <nav class="nav">
+      <a href="index.html" class="nav-logo">ArtPing</a>
+      <div class="nav-links">
+        <a href="feed.html" class="active">Feed</a>
+        <a id="profile-link" href="#" style="display:none;">Profile</a>
+        <a href="upload.html">Upload</a>
+        <a href="login.html">Login</a>
+        <a href="register.html">Register</a>
+        <button id="logout" class="btn-ghost">Logout</button>
+      </div>
+    </nav>
+
+    <main>
+      <div class="profile-posts-header">
+        <h3 class="section-title">Latest Art</h3>
+      </div>
+      <div id="posts-grid" class="posts-grid"></div>
+      <div class="feed-footer">
+        <button id="load-more" class="btn-outline" style="display:none;">Load more</button>
+        <p id="feed-status" class="feed-status"></p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const grid = document.getElementById('posts-grid');
+    const loadMoreBtn = document.getElementById('load-more');
+    const status = document.getElementById('feed-status');
+    let nextCursor = null;
+    let loading = false;
+
+    // Post titles/descriptions are user input, so escape before inserting as HTML
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function timeAgo(dateStr) {
+      const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+      const units = [['y', 31536000], ['mo', 2592000], ['d', 86400], ['h', 3600], ['m', 60]];
+      for (const [label, secs] of units) {
+        if (seconds >= secs) return `${Math.floor(seconds / secs)}${label} ago`;
+      }
+      return 'just now';
+    }
+
+    function renderPost(post) {
+      const profileUrl = `/profile.html?username=${encodeURIComponent(post.username)}`;
+      return `
+        <div class="post-card">
+          <img src="${escapeHtml(post.filepath)}" alt="${escapeHtml(post.title)}" loading="lazy">
+          <div class="post-card-info">
+            <p class="post-title">${escapeHtml(post.title)}</p>
+            ${post.description ? `<p class="post-desc">${escapeHtml(post.description)}</p>` : ''}
+            <p class="post-meta">
+              <a href="${profileUrl}">${escapeHtml(post.username)}</a> · ${timeAgo(post.createdAt)}
+            </p>
+          </div>
+        </div>
+      `;
+    }
+
+    async function loadFeed() {
+      if (loading) return;
+      loading = true;
+      loadMoreBtn.disabled = true;
+      status.textContent = '';
+
+      try {
+        const url = nextCursor ? `/api/feed?before=${encodeURIComponent(nextCursor)}` : '/api/feed';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        if (!nextCursor && data.posts.length === 0) {
+          grid.innerHTML = '<p style="color: var(--ink-faint);">No posts yet. Be the first to <a href="upload.html">upload</a>!</p>';
+        } else {
+          grid.insertAdjacentHTML('beforeend', data.posts.map(renderPost).join(''));
+        }
+
+        nextCursor = data.nextCursor;
+        loadMoreBtn.style.display = nextCursor ? 'inline-block' : 'none';
+      } catch (e) {
+        status.textContent = 'Could not load the feed. Please try again.';
+      } finally {
+        loading = false;
+        loadMoreBtn.disabled = false;
+      }
+    }
+
+    loadMoreBtn.addEventListener('click', loadFeed);
+
+    document.getElementById('logout').addEventListener('click', async () => {
+      const res = await fetch('/api/logout', { method: 'POST' });
+      if (res.ok) location.href = '/login.html';
+    });
+
+    (async () => {
+      try {
+        const res = await fetch('/api/me');
+        const { username } = await res.json();
+        if (username) {
+          const profileLink = document.getElementById('profile-link');
+          profileLink.href = `/profile.html?username=${encodeURIComponent(username)}`;
+          profileLink.style.display = 'inline';
+        }
+      } catch (e) {}
+    })();
+
+    loadFeed();
+  </script>
+</body>
+</html>
