@@ -839,3 +839,10 @@ input[type="password"]:focus {
 }
 
 .follow-dialog .feed-footer { padding: 0 20px 16px; }
+
+/* ===== SIGNED-IN / SIGNED-OUT NAV ===== */
+/* nav.js sets <html data-auth="in|out">; until then both are hidden so nothing flashes */
+html:not([data-auth="in"]) .show-signed-in,
+html:not([data-auth="out"]) .show-signed-out {
+  display: none !important;
+}

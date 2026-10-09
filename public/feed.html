@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/nav.js"></script>
 </head>
 <body>
   <div class="app">
@@ -14,18 +15,18 @@
       <a href="index.html" class="nav-logo">ArtPing</a>
       <div class="nav-links">
         <a href="feed.html" class="active">Feed</a>
-        <a id="profile-link" href="#" style="display:none;">Profile</a>
+        <a id="profile-link" href="#" class="show-signed-in">Profile</a>
         <a href="upload.html">Upload</a>
-        <a href="login.html">Login</a>
-        <a href="register.html">Register</a>
-        <button id="logout" class="btn-ghost">Logout</button>
+        <a href="login.html" class="show-signed-out">Login</a>
+        <a href="register.html" class="show-signed-out">Register</a>
+        <button id="logout" class="btn-ghost show-signed-in">Logout</button>
       </div>
     </nav>
 
     <main>
       <div class="feed-tabs" role="tablist">
         <button class="feed-tab active" data-tab="new" role="tab">Latest</button>
-        <button class="feed-tab" data-tab="hot" role="tab">Hot</button>
+        <button class="feed-tab" data-tab="hot" role="tab">Trending</button>
         <button class="feed-tab" data-tab="following" role="tab">Following</button>
       </div>
       <div id="posts-grid" class="posts-grid"></div>
@@ -43,7 +44,7 @@
     let nextCursor = null;
     let loading = false;
     let currentTab = 'new';
-    let seenIds = new Set(); // Hot rankings can shift between pages, so skip repeats
+    let seenIds = new Set(); // Trending rankings can shift between pages, so skip repeats
 
     // Post titles/descriptions are user input, so escape before inserting as HTML
     function escapeHtml(str) {
@@ -171,22 +172,7 @@
       }
     });
 
-    document.getElementById('logout').addEventListener('click', async () => {
-      const res = await fetch('/api/logout', { method: 'POST' });
-      if (res.ok) location.href = '/login.html';
-    });
 
-    (async () => {
-      try {
-        const res = await fetch('/api/me');
-        const { username } = await res.json();
-        if (username) {
-          const profileLink = document.getElementById('profile-link');
-          profileLink.href = `/profile.html?username=${encodeURIComponent(username)}`;
-          profileLink.style.display = 'inline';
-        }
-      } catch (e) {}
-    })();
 
     loadFeed();
   </script>

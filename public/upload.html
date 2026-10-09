@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/nav.js"></script>
 </head>
 <body>
   <div class="app">
@@ -14,10 +15,11 @@
       <a href="index.html" class="nav-logo">ArtPing</a>
       <div class="nav-links">
         <a href="feed.html">Feed</a>
-        <a id="profile-link" href="#" style="display:none;">Profile</a>
+        <a id="profile-link" href="#" class="show-signed-in">Profile</a>
         <a href="upload.html" class="active">Upload</a>
-        <a href="login.html">Login</a>
-        <a href="register.html">Register</a>
+        <a href="login.html" class="show-signed-out">Login</a>
+        <a href="register.html" class="show-signed-out">Register</a>
+        <button id="logout" class="btn-ghost show-signed-in">Logout</button>
       </div>
     </nav>
 
@@ -125,21 +127,6 @@
       }
     });
 
-(async () => {
-  try {
-    const res = await fetch("/api/me");
-    const { username } = await res.json();
-    if (username) {
-      const profileLink = document.getElementById('profile-link');
-      profileLink.href = `/profile.html?username=${encodeURIComponent(username)}`;
-      profileLink.style.display = 'inline';
-    }
-    if (username && !user && !newuser) {
-      msg.textContent = `Welcome back, ${username}!`;
-      msg.classList.add('visible');
-    }
-  } catch (e) {}
-})();
   </script>
 </body>
 </html>

@@ -400,7 +400,7 @@ app.post('/api/profile/pfp', isAuthenticated, upload.single('pfp'), async (req, 
 //Feed route
 // GET /api/feed?sort=new|hot&scope=all|following&limit=20&cursor=<nextCursor from previous response>
 //   sort=new (default): newest first
-//   sort=hot: likes weighted by recency, so new popular posts rise and old ones sink
+//   sort=hot ("Trending" tab): likes weighted by recency, so new popular posts rise and old ones sink
 //   scope=following: only posts from users the logged-in user follows
 const FEED_FIELDS = { username: 1, title: 1, description: 1, filepath: 1, createdAt: 1, likeCount: 1 };
 
@@ -447,7 +447,7 @@ app.get('/api/feed', async (req, res) => {
       const last = posts[posts.length - 1];
       if (hasMore) nextCursor = `${last.createdAt.toISOString()}_${last._id}`;
     } else {
-      // Hot scores change over time, so a time-based cursor doesn't work here; use page numbers.
+      // Trending scores change over time, so a time-based cursor doesn't work here; use page numbers.
       const page = cursor ? parseInt(cursor) : 1;
       if (!(page >= 1)) return res.status(400).send('Invalid cursor');
 
