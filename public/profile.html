@@ -25,7 +25,7 @@
       <!-- Profile Header -->
       <div class="profile-header">
         <div class="profile-pfp-wrap">
-          <img id="pfp-img" src="/images/default-pfp.png" alt="Profile Picture" class="profile-pfp">
+          <img id="pfp-img" src="/images/default-pfp.webp" alt="Profile Picture" class="profile-pfp">
           <label id="pfp-edit-btn" class="pfp-edit-label" style="display:none;">
             Change Photo
             <input type="file" id="pfp-input" accept="image/png, image/jpeg" style="display:none;">
@@ -35,7 +35,12 @@
           <h2 id="profile-username" class="profile-username"></h2>
           <p id="profile-pronouns" class="profile-pronouns"></p>
           <p id="profile-bio" class="profile-bio"></p>
+          <p class="profile-follow-stats">
+            <button type="button" class="follow-stat" data-list="followers"><strong id="follower-count">0</strong> followers</button>
+            <button type="button" class="follow-stat" data-list="following"><strong id="following-count">0</strong> following</button>
+          </p>
           <button id="edit-btn" class="btn-outline" style="display:none;">Edit Profile</button>
+          <button id="follow-btn" class="btn-primary" style="display:none;">Follow</button>
         </div>
       </div>
 
@@ -67,6 +72,22 @@
       </div>
       <div id="posts-grid" class="posts-grid"></div>
     </main>
+
+    <!-- Followers / Following list -->
+    <dialog id="follow-dialog" class="follow-dialog" aria-labelledby="follow-dialog-title">
+      <div class="follow-dialog-header">
+        <div class="feed-tabs follow-dialog-tabs" role="tablist" id="follow-dialog-title">
+          <button type="button" class="feed-tab" data-list="followers" role="tab">Followers</button>
+          <button type="button" class="feed-tab" data-list="following" role="tab">Following</button>
+        </div>
+        <button type="button" class="follow-dialog-close" aria-label="Close">&times;</button>
+      </div>
+      <ul id="follow-list" class="follow-list"></ul>
+      <div class="feed-footer">
+        <button type="button" id="follow-list-more" class="btn-outline" style="display:none;">Load more</button>
+        <p id="follow-list-status" class="feed-status"></p>
+      </div>
+    </dialog>
   </div>
 
   <script>
@@ -95,6 +116,14 @@
       document.getElementById('profile-pronouns').textContent = profile.pronouns || '';
       document.getElementById('profile-bio').textContent = profile.bio || '';
       if (profile.pfp) document.getElementById('pfp-img').src = profile.pfp;
+      document.getElementById('follower-count').textContent = profile.followerCount;
+      document.getElementById('following-count').textContent = profile.followingCount;
+
+      // Show follow button on other people's profiles
+      if (currentUser !== username) {
+        setFollowButton(profile.isFollowing);
+        document.getElementById('follow-btn').style.display = 'inline-block';
+      }
 
       // Show edit button if owner
       if (currentUser === username) {
@@ -128,6 +157,168 @@
         </div>
       `).join('');
     }
+
+    // Follow / unfollow
+    function setFollowButton(following) {
+      const btn = document.getElementById('follow-btn');
+      btn.textContent = following ? 'Following' : 'Follow';
+      btn.className = following ? 'btn-outline' : 'btn-primary';
+      btn.dataset.following = following;
+    }
+
+    document.getElementById('follow-btn').addEventListener('click', async () => {
+      if (!currentUser) {
+        location.href = '/login.html';
+        return;
+      }
+      const btn = document.getElementById('follow-btn');
+      const following = btn.dataset.following === 'true';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/users/${encodeURIComponent(username)}/follow`, {
+          method: following ? 'DELETE' : 'POST'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFollowButton(data.following);
+          document.getElementById('follower-count').textContent = data.followerCount;
+        } else if (res.status === 401) {
+          location.href = '/login.html';
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Followers / Following list
+    const followDialog = document.getElementById('follow-dialog');
+    const followList = document.getElementById('follow-list');
+    const followListMore = document.getElementById('follow-list-more');
+    const followListStatus = document.getElementById('follow-list-status');
+    let followListType = 'followers';
+    let followListCursor = null;
+    let followListLoading = false;
+    let followListRequest = 0; // ignore responses from a tab the user already left
+
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function renderFollowUser(user) {
+      // No button next to yourself
+      const button = user.isMe ? '' : `
+        <button type="button" class="follow-row-btn ${user.isFollowing ? 'btn-outline' : 'btn-primary'}"
+          data-username="${escapeHtml(user.username)}" data-following="${user.isFollowing}">
+          ${user.isFollowing ? 'Following' : 'Follow'}
+        </button>`;
+      return `
+        <li class="follow-row">
+          <a href="/profile.html?username=${encodeURIComponent(user.username)}" class="follow-user">
+            <img src="${escapeHtml(user.pfp || '/images/default-pfp.webp')}" alt="" class="follow-avatar">
+            <span>${escapeHtml(user.username)}</span>
+          </a>
+          ${button}
+        </li>
+      `;
+    }
+
+    // Follow / unfollow from inside the list (one listener for every row)
+    followList.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.follow-row-btn');
+      if (!btn || btn.disabled) return;
+
+      const following = btn.dataset.following === 'true';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/users/${encodeURIComponent(btn.dataset.username)}/follow`, {
+          method: following ? 'DELETE' : 'POST'
+        });
+        if (res.status === 401) {
+          location.href = '/login.html';
+          return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        btn.dataset.following = data.following;
+        btn.textContent = data.following ? 'Following' : 'Follow';
+        btn.classList.toggle('btn-outline', data.following);
+        btn.classList.toggle('btn-primary', !data.following);
+
+        // On your own profile, your "following" count changes too
+        if (isOwner && data.following !== following) {
+          const countEl = document.getElementById('following-count');
+          countEl.textContent = Number(countEl.textContent) + (data.following ? 1 : -1);
+        }
+      } catch (err) {
+        followListStatus.textContent = 'Could not update follow. Please try again.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function loadFollowList() {
+      if (followListLoading) return;
+      followListLoading = true;
+      followListMore.disabled = true;
+      followListStatus.textContent = '';
+      const type = followListType;
+      const request = ++followListRequest;
+
+      try {
+        const query = followListCursor ? `?cursor=${encodeURIComponent(followListCursor)}` : '';
+        const res = await fetch(`/api/users/${encodeURIComponent(username)}/${type}${query}`);
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        if (request !== followListRequest) return;
+
+        if (!followListCursor && data.users.length === 0) {
+          followList.innerHTML = `<li class="follow-empty">${type === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}</li>`;
+        } else {
+          followList.insertAdjacentHTML('beforeend', data.users.map(renderFollowUser).join(''));
+        }
+        followListCursor = data.nextCursor;
+        followListMore.style.display = followListCursor ? 'inline-block' : 'none';
+      } catch (e) {
+        if (request === followListRequest) followListStatus.textContent = 'Could not load list. Please try again.';
+      } finally {
+        if (request === followListRequest) {
+          followListLoading = false;
+          followListMore.disabled = false;
+        }
+      }
+    }
+
+    function showFollowList(type) {
+      followListType = type;
+      followListCursor = null;
+      followListLoading = false;
+      followList.innerHTML = '';
+      followListMore.style.display = 'none';
+      followDialog.querySelectorAll('.feed-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.list === type);
+        t.setAttribute('aria-selected', t.dataset.list === type);
+      });
+      if (!followDialog.open) followDialog.showModal();
+      loadFollowList();
+    }
+
+    document.querySelectorAll('.follow-stat').forEach(btn => {
+      btn.addEventListener('click', () => showFollowList(btn.dataset.list));
+    });
+    followDialog.querySelectorAll('.feed-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.list !== followListType) showFollowList(tab.dataset.list);
+      });
+    });
+    followListMore.addEventListener('click', loadFollowList);
+    followDialog.querySelector('.follow-dialog-close').addEventListener('click', () => followDialog.close());
+    // Close when clicking the dark backdrop outside the box
+    followDialog.addEventListener('click', (e) => {
+      if (e.target === followDialog) followDialog.close();
+    });
 
     // Edit profile toggle
     document.getElementById('edit-btn').addEventListener('click', () => {

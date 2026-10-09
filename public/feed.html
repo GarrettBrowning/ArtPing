@@ -23,8 +23,10 @@
     </nav>
 
     <main>
-      <div class="profile-posts-header">
-        <h3 class="section-title">Latest Art</h3>
+      <div class="feed-tabs" role="tablist">
+        <button class="feed-tab active" data-tab="new" role="tab">Latest</button>
+        <button class="feed-tab" data-tab="hot" role="tab">Hot</button>
+        <button class="feed-tab" data-tab="following" role="tab">Following</button>
       </div>
       <div id="posts-grid" class="posts-grid"></div>
       <div class="feed-footer">
@@ -40,6 +42,8 @@
     const status = document.getElementById('feed-status');
     let nextCursor = null;
     let loading = false;
+    let currentTab = 'new';
+    let seenIds = new Set(); // Hot rankings can shift between pages, so skip repeats
 
     // Post titles/descriptions are user input, so escape before inserting as HTML
     function escapeHtml(str) {
@@ -65,13 +69,24 @@
           <div class="post-card-info">
             <p class="post-title">${escapeHtml(post.title)}</p>
             ${post.description ? `<p class="post-desc">${escapeHtml(post.description)}</p>` : ''}
-            <p class="post-meta">
-              <a href="${profileUrl}">${escapeHtml(post.username)}</a> · ${timeAgo(post.createdAt)}
-            </p>
+            <div class="post-meta">
+              <span><a href="${profileUrl}">${escapeHtml(post.username)}</a> · ${timeAgo(post.createdAt)}</span>
+              <button class="like-btn${post.likedByMe ? ' liked' : ''}" data-id="${post._id}"
+                aria-pressed="${post.likedByMe}" aria-label="Like">
+                <span class="like-heart">${post.likedByMe ? '♥' : '♡'}</span>
+                <span class="like-count">${post.likeCount}</span>
+              </button>
+            </div>
           </div>
         </div>
       `;
     }
+
+    const emptyMessages = {
+      new: 'No posts yet. Be the first to <a href="upload.html">upload</a>!',
+      hot: 'No posts yet. Be the first to <a href="upload.html">upload</a>!',
+      following: 'Nothing here yet. Follow artists from their profile pages to see their posts here.',
+    };
 
     async function loadFeed() {
       if (loading) return;
@@ -80,15 +95,28 @@
       status.textContent = '';
 
       try {
-        const url = nextCursor ? `/api/feed?before=${encodeURIComponent(nextCursor)}` : '/api/feed';
-        const res = await fetch(url);
+        const params = new URLSearchParams();
+        if (currentTab === 'hot') params.set('sort', 'hot');
+        if (currentTab === 'following') params.set('scope', 'following');
+        if (nextCursor) params.set('cursor', nextCursor);
+
+        const res = await fetch(`/api/feed?${params}`);
+        if (res.status === 401) {
+          grid.innerHTML = '<p style="color: var(--ink-faint);"><a href="login.html">Log in</a> to see posts from artists you follow.</p>';
+          nextCursor = null;
+          loadMoreBtn.style.display = 'none';
+          return;
+        }
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
 
-        if (!nextCursor && data.posts.length === 0) {
-          grid.innerHTML = '<p style="color: var(--ink-faint);">No posts yet. Be the first to <a href="upload.html">upload</a>!</p>';
+        const fresh = data.posts.filter(p => !seenIds.has(p._id));
+        fresh.forEach(p => seenIds.add(p._id));
+
+        if (!nextCursor && fresh.length === 0) {
+          grid.innerHTML = `<p style="color: var(--ink-faint);">${emptyMessages[currentTab]}</p>`;
         } else {
-          grid.insertAdjacentHTML('beforeend', data.posts.map(renderPost).join(''));
+          grid.insertAdjacentHTML('beforeend', fresh.map(renderPost).join(''));
         }
 
         nextCursor = data.nextCursor;
@@ -102,6 +130,46 @@
     }
 
     loadMoreBtn.addEventListener('click', loadFeed);
+
+    // Switch tabs: reset and load from the top
+    document.querySelectorAll('.feed-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (loading || tab.dataset.tab === currentTab) return;
+        document.querySelectorAll('.feed-tab').forEach(t => t.classList.toggle('active', t === tab));
+        currentTab = tab.dataset.tab;
+        nextCursor = null;
+        seenIds = new Set();
+        grid.innerHTML = '';
+        loadMoreBtn.style.display = 'none';
+        loadFeed();
+      });
+    });
+
+    // Like / unlike (one listener for every card, including ones added by Load more)
+    grid.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.like-btn');
+      if (!btn || btn.disabled) return;
+
+      const wasLiked = btn.classList.contains('liked');
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/posts/${btn.dataset.id}/like`, { method: wasLiked ? 'DELETE' : 'POST' });
+        if (res.status === 401) {
+          location.href = '/login.html';
+          return;
+        }
+        if (!res.ok) throw new Error(await res.text());
+        const { liked, likeCount } = await res.json();
+        btn.classList.toggle('liked', liked);
+        btn.setAttribute('aria-pressed', liked);
+        btn.querySelector('.like-heart').textContent = liked ? '♥' : '♡';
+        btn.querySelector('.like-count').textContent = likeCount;
+      } catch (err) {
+        status.textContent = 'Could not update like. Please try again.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('logout').addEventListener('click', async () => {
       const res = await fetch('/api/logout', { method: 'POST' });

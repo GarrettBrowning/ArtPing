@@ -51,6 +51,8 @@ const postSchema = new mongoose.Schema({
   description: { type: String },
   filename: { type: String, required: true },
   filepath: { type: String, required: true },
+  // Kept in sync with the Like collection so the feed doesn't have to count likes per request
+  likeCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // Index for the feed so sorting by newest doesn't scan the whole collection
@@ -68,6 +70,25 @@ const profileSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Profile = mongoose.model('Profile', profileSchema);
+
+// One document per (user, post) like. The unique index stops double-likes.
+const likeSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true },
+}, { timestamps: true });
+likeSchema.index({ userId: 1, postId: 1 }, { unique: true });
+
+const Like = mongoose.model('Like', likeSchema);
+
+// One document per (follower, followed) pair. The unique index stops double-follows.
+const followSchema = new mongoose.Schema({
+  followerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  followingId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+}, { timestamps: true });
+followSchema.index({ followerId: 1, followingId: 1 }, { unique: true });
+followSchema.index({ followingId: 1 }); // for counting a user's followers
+
+const Follow = mongoose.model('Follow', followSchema);
 
 //multer storage configuration
 const storage = multer.diskStorage({
@@ -128,10 +149,152 @@ app.get('/api/profile/:username', async (req, res) => {
   try {
     const profile = await Profile.findOne({ username: req.params.username });
     if (!profile) return res.status(404).send('Profile not found');
-    res.json(profile);
+
+    const [followerCount, followingCount, isFollowing] = await Promise.all([
+      Follow.countDocuments({ followingId: profile.userId }),
+      Follow.countDocuments({ followerId: profile.userId }),
+      req.session.userId
+        ? Follow.exists({ followerId: req.session.userId, followingId: profile.userId })
+        : null,
+    ]);
+
+    res.json({ ...profile.toObject(), followerCount, followingCount, isFollowing: !!isFollowing });
   } catch (error) {
     console.error('Profile fetch error:', error);
     res.status(500).send('An error occured fetching profile')
+  }
+});
+
+//Follow a user
+app.post('/api/users/:username/follow', isAuthenticated, async (req, res) => {
+  try {
+    const target = await User.findOne({ username: req.params.username }).select('_id');
+    if (!target) return res.status(404).send('User not found');
+    if (target._id.toString() === req.session.userId) return res.status(400).send('You cannot follow yourself');
+
+    try {
+      await Follow.create({ followerId: req.session.userId, followingId: target._id });
+    } catch (error) {
+      if (error.code !== 11000) throw error; // already following is fine
+    }
+
+    const followerCount = await Follow.countDocuments({ followingId: target._id });
+    res.json({ following: true, followerCount });
+  } catch (error) {
+    console.error('Follow error:', error);
+    res.status(500).send('An error occurred following user');
+  }
+});
+
+//Unfollow a user
+app.delete('/api/users/:username/follow', isAuthenticated, async (req, res) => {
+  try {
+    const target = await User.findOne({ username: req.params.username }).select('_id');
+    if (!target) return res.status(404).send('User not found');
+
+    await Follow.deleteOne({ followerId: req.session.userId, followingId: target._id });
+
+    const followerCount = await Follow.countDocuments({ followingId: target._id });
+    res.json({ following: false, followerCount });
+  } catch (error) {
+    console.error('Unfollow error:', error);
+    res.status(500).send('An error occurred unfollowing user');
+  }
+});
+
+//List a user's followers or who they follow, most recent first
+// GET /api/users/:username/followers?cursor=<nextCursor>
+// GET /api/users/:username/following?cursor=<nextCursor>
+async function listFollows(req, res, which) {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('_id');
+    if (!user) return res.status(404).send('User not found');
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 30, 1), 100);
+    const filter = which === 'followers' ? { followingId: user._id } : { followerId: user._id };
+    if (req.query.cursor) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.cursor)) return res.status(400).send('Invalid cursor');
+      filter._id = { $lt: new mongoose.Types.ObjectId(req.query.cursor) };
+    }
+
+    // Fetch one extra to know whether there's another page
+    const follows = await Follow.find(filter).sort({ _id: -1 }).limit(limit + 1).lean();
+    const hasMore = follows.length > limit;
+    if (hasMore) follows.pop();
+
+    // The "other" person in each follow: who follows them, or who they follow
+    const otherIds = follows.map(f => which === 'followers' ? f.followerId : f.followingId);
+    const viewerId = req.session.userId;
+    const [users, profiles, viewerFollows] = await Promise.all([
+      User.find({ _id: { $in: otherIds } }).select('username').lean(),
+      Profile.find({ userId: { $in: otherIds } }).select('userId pfp').lean(),
+      // Which of these people the logged-in viewer follows, for the Follow buttons
+      viewerId
+        ? Follow.find({ followerId: viewerId, followingId: { $in: otherIds } }).select('followingId').lean()
+        : [],
+    ]);
+    const usernames = new Map(users.map(u => [u._id.toString(), u.username]));
+    const pfps = new Map(profiles.map(p => [p.userId.toString(), p.pfp]));
+    const followedByViewer = new Set(viewerFollows.map(f => f.followingId.toString()));
+
+    const list = otherIds
+      .filter(id => usernames.has(id.toString())) // skip deleted accounts
+      .map(id => ({
+        username: usernames.get(id.toString()),
+        pfp: pfps.get(id.toString()) || '',
+        isFollowing: followedByViewer.has(id.toString()),
+        isMe: id.toString() === viewerId,
+      }));
+
+    res.json({ users: list, nextCursor: hasMore ? follows[follows.length - 1]._id.toString() : null });
+  } catch (error) {
+    console.error(`List ${which} error:`, error);
+    res.status(500).send(`An error occurred fetching ${which}`);
+  }
+}
+
+app.get('/api/users/:username/followers', (req, res) => listFollows(req, res, 'followers'));
+app.get('/api/users/:username/following', (req, res) => listFollows(req, res, 'following'));
+
+//Like a post
+app.post('/api/posts/:id/like', isAuthenticated, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).send('Invalid post id');
+    if (!await Post.exists({ _id: req.params.id })) return res.status(404).send('Post not found');
+
+    try {
+      await Like.create({ userId: req.session.userId, postId: req.params.id });
+      // Only bump the count if the like was actually new
+      await Post.updateOne({ _id: req.params.id }, { $inc: { likeCount: 1 } });
+    } catch (error) {
+      if (error.code !== 11000) throw error; // already liked is fine
+    }
+
+    const post = await Post.findById(req.params.id).select('likeCount').lean();
+    res.json({ liked: true, likeCount: post.likeCount || 0 });
+  } catch (error) {
+    console.error('Like error:', error);
+    res.status(500).send('An error occurred liking post');
+  }
+});
+
+//Unlike a post
+app.delete('/api/posts/:id/like', isAuthenticated, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).send('Invalid post id');
+
+    const result = await Like.deleteOne({ userId: req.session.userId, postId: req.params.id });
+    // Only lower the count if a like was actually removed
+    if (result.deletedCount) {
+      await Post.updateOne({ _id: req.params.id }, { $inc: { likeCount: -1 } });
+    }
+
+    const post = await Post.findById(req.params.id).select('likeCount').lean();
+    if (!post) return res.status(404).send('Post not found');
+    res.json({ liked: false, likeCount: post.likeCount || 0 });
+  } catch (error) {
+    console.error('Unlike error:', error);
+    res.status(500).send('An error occurred unliking post');
   }
 });
 
@@ -195,39 +358,91 @@ app.post('/api/profile/pfp', isAuthenticated, upload.single('pfp'), async (req, 
   }
 });
 
-//Feed route: all posts, newest first, paginated with a cursor
-// GET /api/feed?limit=20&before=<cursor from previous response>
+//Feed route
+// GET /api/feed?sort=new|hot&scope=all|following&limit=20&cursor=<nextCursor from previous response>
+//   sort=new (default): newest first
+//   sort=hot: likes weighted by recency, so new popular posts rise and old ones sink
+//   scope=following: only posts from users the logged-in user follows
+const FEED_FIELDS = { username: 1, title: 1, description: 1, filepath: 1, createdAt: 1, likeCount: 1 };
+
 app.get('/api/feed', async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 50);
+    const sort = req.query.sort === 'hot' ? 'hot' : 'new';
+    const cursor = req.query.cursor ? String(req.query.cursor) : null;
     const filter = {};
 
-    // Cursor is "<createdAt ISO>_<postId>" of the last post on the previous page.
-    // Using _id as a tiebreaker keeps posts with identical timestamps from being skipped.
-    if (req.query.before) {
-      const [time, id] = String(req.query.before).split('_');
-      const date = new Date(time);
-      if (isNaN(date) || !mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).send('Invalid cursor');
-      }
-      filter.$or = [
-        { createdAt: { $lt: date } },
-        { createdAt: date, _id: { $lt: new mongoose.Types.ObjectId(id) } },
-      ];
+    if (req.query.scope === 'following') {
+      if (!req.session.userId) return res.status(401).send('Log in to see posts from people you follow');
+      const follows = await Follow.find({ followerId: req.session.userId }).select('followingId').lean();
+      filter.userId = { $in: follows.map(f => f.followingId) };
     }
 
-    // Fetch one extra to know whether there's another page
-    const posts = await Post.find(filter)
-      .sort({ createdAt: -1, _id: -1 })
-      .limit(limit + 1)
-      .select('username title description filepath createdAt')
-      .lean();
+    let posts;
+    let nextCursor = null;
 
-    const hasMore = posts.length > limit;
-    if (hasMore) posts.pop();
+    if (sort === 'new') {
+      // Cursor is "<createdAt ISO>_<postId>" of the last post on the previous page.
+      // Using _id as a tiebreaker keeps posts with identical timestamps from being skipped.
+      if (cursor) {
+        const [time, id] = cursor.split('_');
+        const date = new Date(time);
+        if (isNaN(date) || !mongoose.Types.ObjectId.isValid(id)) {
+          return res.status(400).send('Invalid cursor');
+        }
+        filter.$or = [
+          { createdAt: { $lt: date } },
+          { createdAt: date, _id: { $lt: new mongoose.Types.ObjectId(id) } },
+        ];
+      }
 
-    const last = posts[posts.length - 1];
-    const nextCursor = hasMore ? `${last.createdAt.toISOString()}_${last._id}` : null;
+      // Fetch one extra to know whether there's another page
+      posts = await Post.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(limit + 1)
+        .select(FEED_FIELDS)
+        .lean();
+
+      const hasMore = posts.length > limit;
+      if (hasMore) posts.pop();
+      const last = posts[posts.length - 1];
+      if (hasMore) nextCursor = `${last.createdAt.toISOString()}_${last._id}`;
+    } else {
+      // Hot scores change over time, so a time-based cursor doesn't work here; use page numbers.
+      const page = cursor ? parseInt(cursor) : 1;
+      if (!(page >= 1)) return res.status(400).send('Invalid cursor');
+
+      // score = likes / (hoursOld + 2) ^ 1.5
+      const ageHours = { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 1000 * 60 * 60] };
+      posts = await Post.aggregate([
+        { $match: filter },
+        { $addFields: { score: { $divide: [
+          { $ifNull: ['$likeCount', 0] },
+          { $pow: [{ $add: [ageHours, 2] }, 1.5] },
+        ] } } },
+        { $sort: { score: -1, createdAt: -1, _id: -1 } },
+        { $skip: (page - 1) * limit },
+        { $limit: limit + 1 },
+        { $project: FEED_FIELDS },
+      ]);
+
+      if (posts.length > limit) {
+        posts.pop();
+        nextCursor = String(page + 1);
+      }
+    }
+
+    // Mark which of these posts the current user has liked
+    const likedIds = new Set();
+    if (req.session.userId && posts.length) {
+      const likes = await Like.find({ userId: req.session.userId, postId: { $in: posts.map(p => p._id) } })
+        .select('postId').lean();
+      likes.forEach(l => likedIds.add(l.postId.toString()));
+    }
+    posts.forEach(p => {
+      p.likeCount = p.likeCount || 0;
+      p.likedByMe = likedIds.has(p._id.toString());
+    });
 
     res.json({ posts, nextCursor });
   } catch (error) {
