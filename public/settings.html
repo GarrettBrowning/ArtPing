@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing — Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/nav.js"></script>
+  <script src="/password-rules.js"></script>
+</head>
+<body>
+  <div class="app">
+    <nav class="nav">
+      <a href="index.html" class="nav-logo">ArtPing</a>
+      <div class="nav-links">
+        <a href="feed.html">Feed</a>
+        <a id="profile-link" href="#" class="show-signed-in">Profile</a>
+        <a href="upload.html">Upload</a>
+        <a href="reports.html" class="show-admin">Reports</a>
+        <a href="settings.html" class="show-signed-in active">Settings</a>
+        <a href="login.html" class="show-signed-out">Login</a>
+        <a href="register.html" class="show-signed-out">Register</a>
+        <button id="logout" class="btn-ghost show-signed-in">Logout</button>
+      </div>
+    </nav>
+
+    <main class="settings-page">
+      <h2 class="settings-title">Settings</h2>
+
+      <!-- Shown when logged out -->
+      <p class="settings-logged-out show-signed-out">
+        Sorry, you must be logged in to use this feature. <a href="login.html">Log in</a>
+      </p>
+
+      <!-- Each setting gets its own section; more will be added later -->
+      <section class="settings-section show-signed-in" aria-labelledby="password-heading">
+        <h3 id="password-heading" class="settings-section-title">Change password</h3>
+        <p class="settings-section-sub">After you change it, you'll stay logged in here but be logged out on your other devices.</p>
+
+        <p id="password-success" class="form-success" style="display: none;"></p>
+        <p id="password-error" style="color: red; display: none;"></p>
+        <form id="password-form" class="auth-form">
+          <div class="field">
+            <label for="current-password">Current password</label>
+            <input type="password" id="current-password" autocomplete="current-password" required>
+            <span class="field-hint">Forgot it? <a href="forgot-password.html">Reset your password by email</a></span>
+          </div>
+          <div class="field">
+            <label for="new-password">New password</label>
+            <input type="password" id="new-password" autocomplete="new-password" aria-describedby="password-rules" required>
+            <ul id="password-rules"></ul>
+          </div>
+          <div class="field">
+            <label for="repeat-password">Repeat new password</label>
+            <input type="password" id="repeat-password" autocomplete="new-password" required>
+            <span class="field-note" id="match-note" aria-live="polite"></span>
+          </div>
+          <div class="auth-actions settings-actions">
+            <button type="submit" class="btn-primary">Change password</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const form = document.getElementById('password-form');
+    const current = document.getElementById('current-password');
+    const newPassword = document.getElementById('new-password');
+    const repeat = document.getElementById('repeat-password');
+    const errorMsg = document.getElementById('password-error');
+    const successMsg = document.getElementById('password-success');
+
+    attachPasswordChecklist(newPassword, document.getElementById('password-rules'));
+    attachMatchCheck(newPassword, repeat, document.getElementById('match-note'));
+
+    function showError(text) {
+      successMsg.style.display = 'none';
+      errorMsg.textContent = text;
+      errorMsg.style.display = 'block';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      successMsg.style.display = 'none';
+      if (!passwordMeetsRules(newPassword.value)) {
+        return showError("Sorry, your new password doesn't meet all the requirements yet. Check the list under the box.");
+      }
+      if (newPassword.value !== repeat.value) {
+        return showError("Sorry, your new passwords don't match. Please type the same password twice.");
+      }
+
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        const res = await fetch('/api/account/password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword: current.value, newPassword: newPassword.value })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        form.reset();
+        newPassword.dispatchEvent(new Event('input')); // reset the checklist
+        repeat.dispatchEvent(new Event('input'));
+        successMsg.textContent = 'Your password has been changed. Any other devices have been logged out.';
+        successMsg.style.display = 'block';
+      } catch (err) {
+        showError(err.message || "Sorry, we couldn't reach the server. Please check your connection and try again.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

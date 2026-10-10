@@ -17,6 +17,8 @@
         <a href="feed.html" class="active">Feed</a>
         <a id="profile-link" href="#" class="show-signed-in">Profile</a>
         <a href="upload.html">Upload</a>
+        <a href="reports.html" class="show-admin">Reports</a>
+        <a href="settings.html" class="show-signed-in">Settings</a>
         <a href="login.html" class="show-signed-out">Login</a>
         <a href="register.html" class="show-signed-out">Register</a>
         <button id="logout" class="btn-ghost show-signed-in">Logout</button>
@@ -37,6 +39,7 @@
     </main>
   </div>
 
+  <script src="/posts.js"></script>
   <script>
     const grid = document.getElementById('posts-grid');
     const loadMoreBtn = document.getElementById('load-more');
@@ -45,43 +48,6 @@
     let loading = false;
     let currentTab = 'new';
     let seenIds = new Set(); // Trending rankings can shift between pages, so skip repeats
-
-    // Post titles/descriptions are user input, so escape before inserting as HTML
-    function escapeHtml(str) {
-      return String(str ?? '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      }[c]));
-    }
-
-    function timeAgo(dateStr) {
-      const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
-      const units = [['y', 31536000], ['mo', 2592000], ['d', 86400], ['h', 3600], ['m', 60]];
-      for (const [label, secs] of units) {
-        if (seconds >= secs) return `${Math.floor(seconds / secs)}${label} ago`;
-      }
-      return 'just now';
-    }
-
-    function renderPost(post) {
-      const profileUrl = `/profile.html?username=${encodeURIComponent(post.username)}`;
-      return `
-        <div class="post-card">
-          <img src="${escapeHtml(post.filepath)}" alt="${escapeHtml(post.title)}" loading="lazy">
-          <div class="post-card-info">
-            <p class="post-title">${escapeHtml(post.title)}</p>
-            ${post.description ? `<p class="post-desc">${escapeHtml(post.description)}</p>` : ''}
-            <div class="post-meta">
-              <span><a href="${profileUrl}">${escapeHtml(post.username)}</a> · ${timeAgo(post.createdAt)}</span>
-              <button class="like-btn${post.likedByMe ? ' liked' : ''}" data-id="${post._id}"
-                aria-pressed="${post.likedByMe}" aria-label="Like">
-                <span class="like-heart">${post.likedByMe ? '♥' : '♡'}</span>
-                <span class="like-count">${post.likeCount}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
 
     const emptyMessages = {
       new: 'No posts yet. Be the first to <a href="upload.html">upload</a>!',
@@ -117,13 +83,13 @@
         if (!nextCursor && fresh.length === 0) {
           grid.innerHTML = `<p style="color: var(--ink-faint);">${emptyMessages[currentTab]}</p>`;
         } else {
-          grid.insertAdjacentHTML('beforeend', fresh.map(renderPost).join(''));
+          grid.insertAdjacentHTML('beforeend', fresh.map(renderPostCard).join(''));
         }
 
         nextCursor = data.nextCursor;
         loadMoreBtn.style.display = nextCursor ? 'inline-block' : 'none';
       } catch (e) {
-        status.textContent = 'Could not load the feed. Please try again.';
+        status.textContent = "Sorry, we couldn't load the feed. Please try again.";
       } finally {
         loading = false;
         loadMoreBtn.disabled = false;
@@ -145,34 +111,6 @@
         loadFeed();
       });
     });
-
-    // Like / unlike (one listener for every card, including ones added by Load more)
-    grid.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.like-btn');
-      if (!btn || btn.disabled) return;
-
-      const wasLiked = btn.classList.contains('liked');
-      btn.disabled = true;
-      try {
-        const res = await fetch(`/api/posts/${btn.dataset.id}/like`, { method: wasLiked ? 'DELETE' : 'POST' });
-        if (res.status === 401) {
-          location.href = '/login.html';
-          return;
-        }
-        if (!res.ok) throw new Error(await res.text());
-        const { liked, likeCount } = await res.json();
-        btn.classList.toggle('liked', liked);
-        btn.setAttribute('aria-pressed', liked);
-        btn.querySelector('.like-heart').textContent = liked ? '♥' : '♡';
-        btn.querySelector('.like-count').textContent = likeCount;
-      } catch (err) {
-        status.textContent = 'Could not update like. Please try again.';
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-
 
     loadFeed();
   </script>

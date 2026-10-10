@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/password-rules.js"></script>
 </head>
 <body>
   <div class="auth-page">
@@ -24,19 +25,21 @@
 
         <div class="field">
           <label for="email">Email</label>
-          <input type="text" id="email" name="email" placeholder="Enter email" required>
+          <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required>
         </div>
         <div class="field">
           <label for="username">Username</label>
-          <input type="text" id="username" name="username" placeholder="Enter username" required>
+          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" required>
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <input type="password" id="password" name="password" placeholder="Enter password" required>
+          <input type="password" id="password" name="password" placeholder="Create a password" autocomplete="new-password" aria-describedby="password-rules" required>
+          <ul id="password-rules"></ul>
         </div>
         <div class="field">
           <label for="password-repeat">Repeat Password</label>
-          <input type="password" id="password-repeat" name="password-repeat" placeholder="Repeat password" required>
+          <input type="password" id="password-repeat" name="password-repeat" placeholder="Repeat password" autocomplete="new-password" required>
+          <span class="field-note" id="match-note" aria-live="polite"></span>
         </div>
         <label class="checkbox-label">
           <input type="checkbox" name="remember" checked> Remember me
@@ -49,6 +52,9 @@
     </div>
   </div>
 <script>
+  attachPasswordChecklist(document.getElementById('password'), document.getElementById('password-rules'));
+  attachMatchCheck(document.getElementById('password'), document.getElementById('password-repeat'), document.getElementById('match-note'));
+
   document.getElementById('register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
@@ -58,24 +64,27 @@
     const email = document.getElementById('email').value;
     const errorMsg = document.getElementById('error-msg');
 
-    if (password !== passwordRepeat) {
-      errorMsg.textContent = 'Passwords do not match';
-      errorMsg.style.display = 'block';
-      return;
-    }
-
-    const res = await fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, username, password })
-    });
-
-    if (res.ok) {
-      location.href = `/index.html?newuser=${encodeURIComponent(username)}`;
-    } else {
-      const text = await res.text();
+    const showError = (text) => {
       errorMsg.textContent = text;
       errorMsg.style.display = 'block';
+      errorMsg.scrollIntoView({ block: 'nearest' });
+    };
+    if (!passwordMeetsRules(password)) return showError("Sorry, your password doesn't meet all the requirements yet. Check the list under the password box.");
+    if (password !== passwordRepeat) return showError("Sorry, your passwords don't match. Please type the same password twice.");
+
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, username, password })
+      });
+      if (res.ok) {
+        location.href = `/index.html?newuser=${encodeURIComponent(username)}`;
+      } else {
+        showError(await res.text());
+      }
+    } catch (err) {
+      showError("Sorry, we couldn't reach the server. Please check your connection and try again.");
     }
   });
 </script>

@@ -17,6 +17,8 @@
         <a href="feed.html">Feed</a>
         <a id="profile-link" href="#" class="show-signed-in">Profile</a>
         <a href="upload.html">Upload</a>
+        <a href="reports.html" class="show-admin">Reports</a>
+        <a href="settings.html" class="show-signed-in">Settings</a>
         <a href="login.html" class="show-signed-out">Login</a>
         <a href="register.html" class="show-signed-out">Register</a>
         <button id="logout" class="btn-ghost show-signed-in">Logout</button>
@@ -30,7 +32,7 @@
           <img id="pfp-img" src="/images/default-pfp.webp" alt="Profile Picture" class="profile-pfp">
           <label id="pfp-edit-btn" class="pfp-edit-label" style="display:none;">
             Change Photo
-            <input type="file" id="pfp-input" accept="image/png, image/jpeg" style="display:none;">
+            <input type="file" id="pfp-input" accept="image/png, image/jpeg, image/webp, image/gif" style="display:none;">
           </label>
         </div>
         <div class="profile-info">
@@ -92,6 +94,7 @@
     </dialog>
   </div>
 
+  <script src="/posts.js"></script>
   <script>
     const params = new URLSearchParams(window.location.search);
     const username = params.get('username');
@@ -107,7 +110,7 @@
     async function loadProfile() {
       const res = await fetch(`/api/profile/${encodeURIComponent(username)}`);
       if (!res.ok) {
-        document.querySelector('main').innerHTML = '<p style="color: var(--ink-muted); margin-top: 40px;">Profile not found.</p>';
+        document.querySelector('main').innerHTML = '<p style="color: var(--ink-muted); margin-top: 40px;">Sorry, we couldn&#39;t find that profile.</p>';
         return;
       }
       const profile = res.ok ? await res.json() : null;
@@ -147,16 +150,8 @@
         return;
       }
 
-      // Post titles/descriptions are user input, so escape before inserting as HTML
-      grid.innerHTML = posts.map(post => `
-        <div class="post-card">
-          <img src="${escapeHtml(post.filepath)}" alt="${escapeHtml(post.title)}" loading="lazy">
-          <div class="post-card-info">
-            <p class="post-title">${escapeHtml(post.title)}</p>
-            ${post.description ? `<p class="post-desc">${escapeHtml(post.description)}</p>` : ''}
-          </div>
-        </div>
-      `).join('');
+      // Same cards as the feed (likes, comments, reports), from posts.js
+      grid.innerHTML = posts.map(renderPostCard).join('');
     }
 
     // Follow / unfollow
@@ -168,10 +163,7 @@
     }
 
     document.getElementById('follow-btn').addEventListener('click', async () => {
-      if (!currentUser) {
-        location.href = '/login.html';
-        return;
-      }
+      if (!currentUser) return showLoginNeeded();
       const btn = document.getElementById('follow-btn');
       const following = btn.dataset.following === 'true';
       btn.disabled = true;
@@ -184,7 +176,9 @@
           setFollowButton(data.following);
           document.getElementById('follower-count').textContent = data.followerCount;
         } else if (res.status === 401) {
-          location.href = '/login.html';
+          showLoginNeeded(res);
+        } else {
+          showToast(await res.text());
         }
       } finally {
         btn.disabled = false;
@@ -200,12 +194,6 @@
     let followListCursor = null;
     let followListLoading = false;
     let followListRequest = 0; // ignore responses from a tab the user already left
-
-    function escapeHtml(str) {
-      return String(str ?? '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      }[c]));
-    }
 
     function renderFollowUser(user) {
       // No button next to yourself
@@ -236,10 +224,7 @@
         const res = await fetch(`/api/users/${encodeURIComponent(btn.dataset.username)}/follow`, {
           method: following ? 'DELETE' : 'POST'
         });
-        if (res.status === 401) {
-          location.href = '/login.html';
-          return;
-        }
+        if (res.status === 401) return showLoginNeeded(res);
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
 
@@ -254,7 +239,7 @@
           countEl.textContent = Number(countEl.textContent) + (data.following ? 1 : -1);
         }
       } catch (err) {
-        followListStatus.textContent = 'Could not update follow. Please try again.';
+        followListStatus.textContent = "Sorry, we couldn't update that follow. Please try again.";
       } finally {
         btn.disabled = false;
       }
@@ -283,7 +268,7 @@
         followListCursor = data.nextCursor;
         followListMore.style.display = followListCursor ? 'inline-block' : 'none';
       } catch (e) {
-        if (request === followListRequest) followListStatus.textContent = 'Could not load list. Please try again.';
+        if (request === followListRequest) followListStatus.textContent = "Sorry, we couldn't load this list. Please try again.";
       } finally {
         if (request === followListRequest) {
           followListLoading = false;
@@ -358,20 +343,30 @@
 
     // PFP upload
     document.getElementById('pfp-input').addEventListener('change', async () => {
-      const file = document.getElementById('pfp-input').files[0];
+      const input = document.getElementById('pfp-input');
+      const file = input.files[0];
+      input.value = ''; // lets you pick the same file again after an error
       if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('Sorry, that image is too big. Profile pictures can be up to 5 MB.');
+        return;
+      }
 
       const formData = new FormData();
       formData.append('pfp', file);
 
-      const res = await fetch('/api/profile/pfp', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (res.ok) {
+      try {
+        const res = await fetch('/api/profile/pfp', {
+          method: 'POST',
+          body: formData
+        });
+        if (res.status === 401) return showLoginNeeded(res);
+        if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         document.getElementById('pfp-img').src = data.pfp;
+        showToast('Profile picture updated.');
+      } catch (err) {
+        showToast(err.message || "Sorry, we couldn't update your profile picture. Please try again.");
       }
     });
 
