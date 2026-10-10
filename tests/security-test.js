@@ -560,6 +560,99 @@ async function run() {
   check('they are logged out and cannot log back in', (await other.req('GET', '/api/me')).json.username === null
     && (await client().login(users.other.name, users.other.pw)).status === 401);
 
+  group('Launch basics: page info, icons, footer, links and search engines');
+  const PUBLIC = path.join(ROOT, 'public');
+  const NO_INDEX = new Set(['upload', 'settings', 'reports', 'forgot-password', 'reset-password', '404']);
+  const FIXED_ADDRESS = { index: '/', feed: '/feed.html', about: '/about.html', login: '/login.html', register: '/register.html' };
+  const thisYear = String(new Date().getFullYear());
+  const pageNames = fs.readdirSync(PUBLIC).filter(f => f.endsWith('.html')).map(f => f.replace(/\.html$/, ''));
+  check('found the site pages', pageNames.length >= 12, `found ${pageNames.length}`);
+  for (const name of pageNames) {
+    const r = await anon.req('GET', name === 'index' ? '/' : `/${name}.html`);
+    const html = r.text;
+    const grab = (re) => (re.exec(html) || [])[1] || '';
+    const title = grab(/<title>([^<]*)<\/title>/);
+    const description = grab(/<meta name="description" content="([^"]*)"/);
+    const problems = [];
+    if (r.status !== 200) problems.push(`status ${r.status}`);
+    if (title.length < 10 || title.length > 70) problems.push(`title length ${title.length}`);
+    if (description.length < 30 || description.length > 200) problems.push(`description length ${description.length}`);
+    if (!/<meta name="viewport"/.test(html)) problems.push('no viewport tag');
+    if (!html.includes('href="/favicon.svg"') || !html.includes('rel="apple-touch-icon"')) problems.push('missing icons');
+    if (!html.includes('href="#main-content"') || !html.includes('id="main-content"')) problems.push('no skip link / main landmark');
+    if (!html.includes(`&copy; ${thisYear} ArtPing`)) problems.push('footer missing or wrong year');
+    if (!html.includes('href="/about.html"')) problems.push('footer has no About link');
+    if (/%APP_URL%|%YEAR%/.test(html)) problems.push('placeholder left unfilled');
+    if (/<img(?![^>]*\salt=)[^>]*>/i.test(html)) problems.push('image without alt text');
+    const noindex = /<meta name="robots" content="noindex"/.test(html);
+    if (NO_INDEX.has(name) !== noindex) problems.push(noindex ? 'wrongly hidden from search' : 'private page not hidden from search');
+    if (!NO_INDEX.has(name)) {
+      if (grab(/<meta property="og:title" content="([^"]*)"/) !== title) problems.push('share title missing or different');
+      if (grab(/<meta property="og:image" content="([^"]*)"/) !== `${BASE}/images/og-image.png`) problems.push('share image address wrong');
+      if (FIXED_ADDRESS[name]) {
+        const want = BASE + FIXED_ADDRESS[name];
+        if (grab(/<link rel="canonical" href="([^"]*)"/) !== want) problems.push('canonical address wrong');
+        if (grab(/<meta property="og:url" content="([^"]*)"/) !== want) problems.push('share address wrong');
+      }
+    }
+    check(`${name}.html has complete page info (title, description, icons, footer, share tags)`, problems.length === 0, problems.join('; '));
+  }
+  check('page names work in any capitalization, placeholders filled', !/%APP_URL%|%YEAR%/.test((await anon.req('GET', '/FEED.HTML')).text));
+
+  const binary = async (url) => {
+    const res = await fetch(BASE + url);
+    return { status: res.status, type: res.headers.get('content-type') || '', buffer: Buffer.from(await res.arrayBuffer()) };
+  };
+  const svgIcon = await binary('/favicon.svg');
+  check('favicon.svg is served as an image', svgIcon.status === 200 && /image\/svg\+xml/.test(svgIcon.type));
+  for (const [url, w, h] of [['/favicon-32.png', 32, 32], ['/apple-touch-icon.png', 180, 180], ['/images/og-image.png', 1200, 630]]) {
+    const img = await binary(url);
+    const meta = img.status === 200 ? await sharp(img.buffer).metadata() : {};
+    check(`${url} is a ${w}x${h} PNG`, meta.format === 'png' && meta.width === w && meta.height === h, `${meta.format} ${meta.width}x${meta.height}`);
+  }
+  const ico = await anon.req('GET', '/favicon.ico');
+  check('/favicon.ico points browsers at the icon', ico.status === 301 && ico.headers.get('location') === '/favicon-32.png');
+
+  const robots = await anon.req('GET', '/robots.txt');
+  check('robots.txt is served as plain text', robots.status === 200 && /text\/plain/.test(robots.headers.get('content-type') || ''));
+  check('robots.txt keeps crawlers out of /api/ and private pages', robots.text.includes('Disallow: /api/') && robots.text.includes('Disallow: /settings.html'));
+  check('robots.txt does not block the whole site', !/^Disallow:\s*\/\s*$/m.test(robots.text));
+  check('robots.txt points to the sitemap', robots.text.includes(`Sitemap: ${BASE}/sitemap.xml`));
+  const sitemap = await anon.req('GET', '/sitemap.xml');
+  const locs = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+  check('sitemap.xml is served as XML with the public pages', sitemap.status === 200 && /xml/.test(sitemap.headers.get('content-type') || '') && locs.includes(`${BASE}/`) && locs.includes(`${BASE}/feed.html`));
+  check('sitemap lists only addresses on this site, never private pages', locs.every(u => u.startsWith(BASE)) && !locs.some(u => /settings|reports|upload|reset|forgot/.test(u)));
+  let sitemapBroken = [];
+  for (const loc of locs) if ((await anon.req('GET', loc.replace(BASE, ''))).status !== 200) sitemapBroken.push(loc);
+  check('every sitemap address works', sitemapBroken.length === 0, sitemapBroken.join(', '));
+
+  // Every link and image address written in the pages and scripts must point at something that exists
+  const brokenLinks = [];
+  let linksChecked = 0;
+  const exists = (address) => {
+    const clean = address.split('#')[0].split('?')[0];
+    if (!clean) return true;
+    const relative = (clean === '/' ? '/index.html' : clean).replace(/^\//, '');
+    return fs.existsSync(path.join(PUBLIC, relative));
+  };
+  const scripts = ['nav.js', 'posts.js', 'password-rules.js', ...fs.readdirSync(path.join(PUBLIC, 'js')).map(f => `js/${f}`)];
+  for (const name of pageNames) {
+    const html = fs.readFileSync(path.join(PUBLIC, `${name}.html`), 'utf8');
+    for (const [, address] of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+      if (/^(https?:|mailto:|tel:|data:|#)/.test(address) || address.includes('%') || address.startsWith('/api/')) continue;
+      linksChecked++;
+      if (!exists(address.startsWith('/') ? address : `/${address}`)) brokenLinks.push(`${name}.html -> ${address}`);
+    }
+  }
+  for (const script of scripts) {
+    const code = fs.readFileSync(path.join(PUBLIC, script), 'utf8');
+    for (const [, address] of code.matchAll(/['"`]\/?([a-z0-9-]+\.html)(?:[?#][^'"`]*)?['"`]/g)) {
+      linksChecked++;
+      if (!exists(`/${address}`)) brokenLinks.push(`${script} -> ${address}`);
+    }
+  }
+  check(`no broken links (checked ${linksChecked})`, brokenLinks.length === 0 && linksChecked > 40, brokenLinks.join('; '));
+
   group('Rate limits (run last; they lock this test server out)');
   let limited = null;
   for (let i = 0; i < 8 && !limited; i++) {

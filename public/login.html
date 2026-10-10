@@ -3,14 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArtPing — Login</title>
+  <title>ArtPing — Log in</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="Log in to ArtPing to share your artwork, follow artists and join the conversation.">
+  <meta name="theme-color" content="#f5f3f0">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="%APP_URL%/login.html">
+  <meta property="og:site_name" content="ArtPing">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ArtPing — Log in">
+  <meta property="og:description" content="Log in to ArtPing to share your artwork, follow artists and join the conversation.">
+  <meta property="og:url" content="%APP_URL%/login.html">
+  <meta property="og:image" content="%APP_URL%/images/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
 </head>
 
 <body>
-  <div class="auth-page">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<main class="auth-page" id="main-content">
     <div class="auth-brand">
       <a href="index.html" class="nav-logo">ArtPing</a>
       <p>Your creative space.</p>
@@ -40,7 +54,13 @@
         <p class="forgot"><a href="forgot-password.html">Forgot password?</a></p>
       </form>
     </div>
-  </div>
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
+  </main>
 
 <script src="/js/login.js"></script>
 

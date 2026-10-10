@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtPing — About</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="What ArtPing is, what you can do here, and how we keep it a friendly place for artists.">
+  <meta name="theme-color" content="#f5f3f0">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="%APP_URL%/about.html">
+  <meta property="og:site_name" content="ArtPing">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ArtPing — About">
+  <meta property="og:description" content="What ArtPing is, what you can do here, and how we keep it a friendly place for artists.">
+  <meta property="og:url" content="%APP_URL%/about.html">
+  <meta property="og:image" content="%APP_URL%/images/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <script src="/nav.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app">
+    <nav class="nav">
+      <a href="index.html" class="nav-logo">ArtPing</a>
+      <div class="nav-links">
+        <a href="feed.html">Feed</a>
+        <a id="profile-link" href="#" class="show-signed-in">Profile</a>
+        <a href="upload.html">Upload</a>
+        <a href="reports.html" class="show-admin">Reports</a>
+        <a href="settings.html" class="show-signed-in">Settings</a>
+        <a href="login.html" class="show-signed-out">Login</a>
+        <a href="register.html" class="show-signed-out">Register</a>
+        <button id="logout" class="btn-ghost show-signed-in">Logout</button>
+      </div>
+    </nav>
+
+    <main class="about-page" id="main-content">
+      <p class="hero-eyebrow">About</p>
+      <h1 class="about-title">A place for artists to share their work.</h1>
+      <p class="about-lead">ArtPing is a small, friendly community where artists post their artwork, follow each other and give feedback.</p>
+
+      <section class="about-section" aria-labelledby="what-heading">
+        <h2 id="what-heading" class="about-heading">What you can do</h2>
+        <ul class="about-list">
+          <li><strong>Share your art.</strong> Upload your artwork with a title and a description. You can edit or delete a post whenever you like.</li>
+          <li><strong>Find new artists.</strong> The feed shows the newest art, what's trending, and posts from the artists you follow.</li>
+          <li><strong>Join the conversation.</strong> Like what you love and leave comments.</li>
+          <li><strong>Make it yours.</strong> Add a profile picture, a bio and your pronouns.</li>
+        </ul>
+      </section>
+
+      <section class="about-section" aria-labelledby="friendly-heading">
+        <h2 id="friendly-heading" class="about-heading">Keeping it friendly</h2>
+        <p>See something that doesn't belong, like spam, harassment or art that was stolen from someone else? Use the report button on any post or comment. Reports are reviewed by a person, and content that doesn't belong is removed.</p>
+      </section>
+
+      <section class="about-section" aria-labelledby="data-heading">
+        <h2 id="data-heading" class="about-heading">Your data is yours</h2>
+        <p>In Settings you can download a copy of everything ArtPing stores about you, or delete your account and everything you've posted, whenever you want. We never show your email address to other people.</p>
+      </section>
+
+      <div class="hero-actions">
+        <a href="feed.html" class="btn-primary">Browse the Feed</a>
+        <a href="register.html" class="btn-outline show-signed-out">Join ArtPing</a>
+        <a href="upload.html" class="btn-outline show-signed-in">Upload your art</a>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
+  </div>
+</body>
+</html>

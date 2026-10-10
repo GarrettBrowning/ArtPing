@@ -3,17 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArtPing — Page Not Found</title>
+  <title>ArtPing — Page not found</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="Sorry, we couldn't find that page on ArtPing.">
+  <meta name="theme-color" content="#f5f3f0">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 </head>
 <body>
-  <div class="app">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app">
     <nav class="nav">
       <a href="/index.html" class="nav-logo">ArtPing</a>
     </nav>
-    <main class="not-found">
+    <main class="not-found" id="main-content">
       <p class="hero-eyebrow">404</p>
       <h1 class="not-found-title">Sorry, we couldn't find that page.</h1>
       <p class="not-found-sub">The link may be broken, or the page may have moved.</p>
@@ -22,6 +29,13 @@
         <a href="/index.html" class="btn-outline">Go Home</a>
       </div>
     </main>
+
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
   </div>
 </body>
 </html>

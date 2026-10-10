@@ -1679,3 +1679,104 @@ html:not([data-admin="true"]) .show-admin { display: none !important; }
 .settings-section + .settings-section { margin-top: 20px; }
 .settings-danger { border-color: #e8c4bf; }
 .settings-danger .settings-section-title { color: var(--danger); }
+
+/* ===== ACCESSIBILITY ===== */
+/* "Skip to main content": invisible until a keyboard user tabs to it */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -64px;
+  z-index: 2000;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.skip-link:focus { top: 12px; }
+
+/* A clear outline on whatever has keyboard focus (mouse clicks don't trigger it) */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* For people who turn off motion in their device settings */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===== FOOTER ===== */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-top: 48px;
+  padding: 24px 0 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.site-footer nav { display: flex; gap: 20px; }
+.site-footer a { color: var(--ink-muted); }
+.site-footer a:hover { color: var(--ink); }
+
+/* Login and sign-up pages: centered under the form */
+.auth-page .site-footer {
+  width: 100%;
+  max-width: 440px;
+  margin-top: 0;
+  padding-top: 20px;
+  justify-content: center;
+  text-align: center;
+}
+
+/* ===== ABOUT PAGE ===== */
+.about-page {
+  max-width: 640px;
+  padding: 24px 0 8px;
+}
+
+.about-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 600;
+  line-height: 1.15;
+  margin-bottom: 16px;
+}
+
+.about-lead {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin-bottom: 8px;
+}
+
+.about-section {
+  margin-top: 36px;
+  line-height: 1.65;
+}
+
+.about-heading {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.about-list {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.about-page .hero-actions { margin-top: 36px; }

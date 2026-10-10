@@ -20,6 +20,7 @@ async function loadProfile() {
   const profile = res.ok ? await res.json() : null;
 
   document.getElementById('profile-username').textContent = profile.username;
+  document.title = `${profile.username} — ArtPing`; // so browser tabs and search results show whose profile it is
   document.getElementById('profile-pronouns').textContent = profile.pronouns || '';
   document.getElementById('profile-bio').textContent = profile.bio || '';
   if (profile.pfp) document.getElementById('pfp-img').src = profile.pfp;

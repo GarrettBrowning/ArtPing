@@ -7,7 +7,8 @@
     "start": "node server.js",
     "server": "nodemon server.js",
     "test:security": "node tests/security-test.js",
-    "admin": "node scripts/admin.js"
+    "admin": "node scripts/admin.js",
+    "icons": "node scripts/make-icons.js"
   },
   "keywords": [],
   "author": "",

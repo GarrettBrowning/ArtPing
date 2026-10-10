@@ -7,10 +7,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="Browse the newest and most popular artwork from artists on ArtPing, or follow artists to see their latest posts.">
+  <meta name="theme-color" content="#f5f3f0">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="%APP_URL%/feed.html">
+  <meta property="og:site_name" content="ArtPing">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ArtPing — Feed">
+  <meta property="og:description" content="Browse the newest and most popular artwork from artists on ArtPing, or follow artists to see their latest posts.">
+  <meta property="og:url" content="%APP_URL%/feed.html">
+  <meta property="og:image" content="%APP_URL%/images/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
   <script src="/nav.js"></script>
 </head>
 <body>
-  <div class="app">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app">
     <nav class="nav">
       <a href="index.html" class="nav-logo">ArtPing</a>
       <div class="nav-links">
@@ -25,7 +39,7 @@
       </div>
     </nav>
 
-    <main>
+    <main id="main-content">
       <div class="feed-tabs" role="tablist">
         <button class="feed-tab active" data-tab="new" role="tab">Latest</button>
         <button class="feed-tab" data-tab="hot" role="tab">Trending</button>
@@ -37,6 +51,13 @@
         <p id="feed-status" class="feed-status"></p>
       </div>
     </main>
+
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
   </div>
 
   <script src="/posts.js"></script>

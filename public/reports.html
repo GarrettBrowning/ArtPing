@@ -7,10 +7,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="Review reported posts and comments on ArtPing.">
+  <meta name="theme-color" content="#f5f3f0">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <script src="/nav.js"></script>
 </head>
 <body>
-  <div class="app">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app">
     <nav class="nav">
       <a href="index.html" class="nav-logo">ArtPing</a>
       <div class="nav-links">
@@ -25,13 +32,20 @@
       </div>
     </nav>
 
-    <main>
+    <main id="main-content">
       <div class="profile-posts-header">
         <h3 class="section-title">Open reports</h3>
         <p class="reports-sub">Most-reported first. <strong>Remove</strong> deletes the post or comment for everyone; <strong>Dismiss</strong> keeps it and closes the reports.</p>
       </div>
       <div id="report-list" class="report-list"></div>
     </main>
+
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
   </div>
 
   <script src="/posts.js"></script>

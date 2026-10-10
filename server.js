@@ -18,6 +18,11 @@ const nodemailer = require('nodemailer');
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ArtPing';
 const isProduction = process.env.NODE_ENV === 'production';
+// The site's public address (no trailing slash). Used in password reset emails, share previews, robots.txt and the sitemap.
+const APP_URL = (process.env.APP_URL || `http://localhost:${port}`).replace(/\/$/, '');
+if (isProduction && !process.env.APP_URL) {
+  console.warn('WARNING: APP_URL is not set. Link previews, canonical links, the sitemap and password reset emails will all use http://localhost. Set it to your real https:// address.');
+}
 
 // Without a real secret anyone could forge login sessions, so refuse to start
 if (!process.env.SESSION_SECRET) {
@@ -59,8 +64,64 @@ app.use((req, res, next) => {
   next();
 });
 
+// ===== Pages =====
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// HTML pages hold two placeholders that are filled in as the page is sent:
+//   %APP_URL% = the site's full address (share previews and search engines need absolute links)
+//   %YEAR%    = the current year (footer copyright)
+// The replacement is a function so special characters in APP_URL can never be misread.
+function fillPage(html) {
+  return html
+    .replaceAll('%APP_URL%', () => APP_URL)
+    .replaceAll('%YEAR%', () => String(new Date().getFullYear()));
+}
+
+app.use(async (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  // Only plain page names like /feed.html (or / for the home page), so no path tricks are possible
+  const page = req.path === '/' ? 'index' : (/^\/([a-z0-9-]+)\.html$/i.exec(req.path) || [])[1];
+  if (!page) return next();
+  try {
+    const html = await fs.promises.readFile(path.join(PUBLIC_DIR, `${page.toLowerCase()}.html`), 'utf8');
+    res.type('html').set('Cache-Control', 'no-cache').send(fillPage(html));
+  } catch (error) {
+    if (error.code === 'ENOENT') return next();
+    next(error);
+  }
+});
+
+// Pages search engines should list (private pages like Settings are left out)
+const SITEMAP_PATHS = ['/', '/feed.html', '/about.html', '/register.html', '/login.html'];
+
+app.get('/robots.txt', (req, res) => {
+  // robots.txt only asks well-behaved crawlers to stay away; it is not a security measure
+  res.type('text/plain').send([
+    'User-agent: *',
+    'Disallow: /api/',
+    'Disallow: /settings.html',
+    'Disallow: /reports.html',
+    'Disallow: /upload.html',
+    'Disallow: /forgot-password.html',
+    'Disallow: /reset-password.html',
+    '',
+    `Sitemap: ${APP_URL}/sitemap.xml`,
+    '',
+  ].join('\n'));
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const urls = SITEMAP_PATHS.map(p => `  <url><loc>${APP_URL}${p}</loc></url>`).join('\n');
+  res.type('application/xml').send(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`
+  );
+});
+
+// Browsers ask for /favicon.ico on their own; point them at our icon
+app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon-32.png'));
+
 // Serve static files from the 'public' directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(PUBLIC_DIR));
 // JSON only: the pages never send classic HTML forms, so other sites can't submit forms to the API
 app.use(express.json({ limit: '100kb' }));
 // Requests without a body still get an empty object, so handlers can always read req.body
@@ -1241,7 +1302,6 @@ app.post('/api/logout', (req, res) => {
 
 // ===== Password reset by email =====
 // Without SMTP settings, the reset link is printed in the server terminal instead (fine for development).
-const APP_URL = (process.env.APP_URL || `http://localhost:${port}`).replace(/\/$/, '');
 const RESET_TOKEN_MINUTES = 60;
 const mailer = process.env.SMTP_HOST
   ? nodemailer.createTransport({
@@ -1445,8 +1505,13 @@ app.use('/api', (req, res) => {
   res.status(404).send('Sorry, we couldn\'t find what you were looking for.');
 });
 
-app.use((req, res) => {
-  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+app.use(async (req, res) => {
+  try {
+    const html = await fs.promises.readFile(path.join(PUBLIC_DIR, '404.html'), 'utf8');
+    res.status(404).type('html').send(fillPage(html));
+  } catch (error) {
+    res.status(404).type('text/plain').send('Sorry, we couldn\'t find that page.');
+  }
 });
 
 // eslint-disable-next-line no-unused-vars

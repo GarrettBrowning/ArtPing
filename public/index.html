@@ -3,14 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArtPing</title>
+  <title>ArtPing — Share your artwork with the world</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <meta name="description" content="ArtPing is a place for artists to share their artwork, follow other creators and get feedback from a friendly community.">
+  <meta name="theme-color" content="#f5f3f0">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="canonical" href="%APP_URL%/">
+  <meta property="og:site_name" content="ArtPing">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="ArtPing — Share your artwork with the world">
+  <meta property="og:description" content="ArtPing is a place for artists to share their artwork, follow other creators and get feedback from a friendly community.">
+  <meta property="og:url" content="%APP_URL%/">
+  <meta property="og:image" content="%APP_URL%/images/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
   <script src="/nav.js"></script>
 </head>
 <body>
-  <div class="app">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app">
     <nav class="nav">
       <span class="nav-logo">ArtPing</span>
       <div class="nav-links">
@@ -25,7 +39,7 @@
       </div>
     </nav>
 
-    <header class="hero">
+    <main class="hero" id="main-content">
       <p class="hero-eyebrow">Your creative space</p>
       <h1 class="hero-title">Welcome to<br><em>ArtPing</em></h1>
       <p class="hero-sub">Share your artwork with the world.</p>
@@ -35,7 +49,14 @@
         <a href="login.html" class="btn-outline show-signed-out">Sign In</a>
         <a href="feed.html" class="btn-primary show-signed-in">Browse the Feed</a>
       </div>
-    </header>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; %YEAR% ArtPing</p>
+      <nav aria-label="Footer">
+        <a href="/about.html">About</a>
+      </nav>
+    </footer>
   </div>
 
   <script src="/js/index.js"></script>
