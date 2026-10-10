@@ -5,3 +5,5 @@ public/uploads/
 NOTES.md
 .env.example
 CLAUDE.md
+.claude\agents
+security-auditor.md
