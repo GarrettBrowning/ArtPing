@@ -29,7 +29,8 @@
         </div>
         <div class="field">
           <label for="username">Username</label>
-          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" required>
+          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" maxlength="30" aria-describedby="username-hint" required>
+          <span class="field-hint" id="username-hint">3–30 characters: letters, numbers and underscores (_)</span>
         </div>
         <div class="field">
           <label for="password">Password</label>
@@ -45,48 +46,12 @@
           <input type="checkbox" name="remember" checked> Remember me
         </label>
         <div class="auth-actions">
-          <button type="button" class="btn-outline" onclick="location.href='index.html'">Cancel</button>
+          <a href="index.html" class="btn-outline">Cancel</a>
           <button type="submit" class="btn-primary">Sign Up</button>
         </div>
       </form>
     </div>
   </div>
-<script>
-  attachPasswordChecklist(document.getElementById('password'), document.getElementById('password-rules'));
-  attachMatchCheck(document.getElementById('password'), document.getElementById('password-repeat'), document.getElementById('match-note'));
-
-  document.getElementById('register-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const passwordRepeat = document.getElementById('password-repeat').value;
-    const email = document.getElementById('email').value;
-    const errorMsg = document.getElementById('error-msg');
-
-    const showError = (text) => {
-      errorMsg.textContent = text;
-      errorMsg.style.display = 'block';
-      errorMsg.scrollIntoView({ block: 'nearest' });
-    };
-    if (!passwordMeetsRules(password)) return showError("Sorry, your password doesn't meet all the requirements yet. Check the list under the password box.");
-    if (password !== passwordRepeat) return showError("Sorry, your passwords don't match. Please type the same password twice.");
-
-    try {
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, username, password })
-      });
-      if (res.ok) {
-        location.href = `/index.html?newuser=${encodeURIComponent(username)}`;
-      } else {
-        showError(await res.text());
-      }
-    } catch (err) {
-      showError("Sorry, we couldn't reach the server. Please check your connection and try again.");
-    }
-  });
-</script>
+<script src="/js/register.js"></script>
 </body>
 </html>

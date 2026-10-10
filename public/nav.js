@@ -62,6 +62,60 @@ async function showLoginNeeded(res) {
   });
 }
 
+// Styled replacement for the browser's confirm() prompt.
+// Usage: if (await confirmAction({ title, message, confirmLabel })) { ...do it... }
+let confirmDialog = null;
+let confirmResolve = null; // answers the open prompt; null when none is waiting
+
+function finishConfirm(answer) {
+  if (confirmDialog.open) confirmDialog.close();
+  if (confirmResolve) {
+    const resolve = confirmResolve;
+    confirmResolve = null;
+    resolve(answer);
+  }
+}
+
+function confirmAction({ title, message, confirmLabel = 'Delete' }) {
+  if (!confirmDialog) {
+    document.body.insertAdjacentHTML('beforeend', `
+      <dialog class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="confirm-form">
+          <h3 id="confirm-title" class="confirm-title"></h3>
+          <p id="confirm-message" class="confirm-message"></p>
+          <div class="confirm-buttons">
+            <button type="button" class="btn-outline confirm-cancel">Cancel</button>
+            <button type="button" class="btn-primary btn-danger confirm-ok"></button>
+          </div>
+        </div>
+      </dialog>
+    `);
+    confirmDialog = document.body.lastElementChild;
+    confirmDialog.querySelector('.confirm-ok').addEventListener('click', () => finishConfirm(true));
+    confirmDialog.querySelector('.confirm-cancel').addEventListener('click', () => finishConfirm(false));
+    // Clicking the dark backdrop counts as Cancel
+    confirmDialog.addEventListener('click', (e) => {
+      if (e.target === confirmDialog) finishConfirm(false);
+    });
+    // Escape counts as Cancel
+    confirmDialog.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      finishConfirm(false);
+    });
+    // Closed any other way: treat as Cancel (no-op if already answered)
+    confirmDialog.addEventListener('close', () => finishConfirm(false));
+  }
+  if (confirmResolve) finishConfirm(false); // a previous prompt was still waiting
+
+  confirmDialog.querySelector('.confirm-title').textContent = title;
+  confirmDialog.querySelector('.confirm-message').textContent = message;
+  confirmDialog.querySelector('.confirm-ok').textContent = confirmLabel;
+  confirmDialog.showModal();
+  confirmDialog.querySelector('.confirm-cancel').focus(); // safe choice selected by default
+
+  return new Promise(resolve => { confirmResolve = resolve; });
+}
+
 // Logout button (same on every page)
 document.addEventListener('click', async (e) => {
   if (!e.target.closest('#logout')) return;

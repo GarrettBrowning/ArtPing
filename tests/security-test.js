@@ -112,7 +112,7 @@ async function startServer() {
       PORT: String(PORT),
       MONGODB_URI: MONGO_URI,
       SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
-      ADMIN_USERNAMES: ADMIN,
+      TRUST_PROXY: 'loopback', // lets the test fake visitor IPs with X-Forwarded-For
       APP_URL: BASE,
       NODE_ENV: 'test',
       SMTP_HOST: '', // forces reset links to be printed so the test can read them
@@ -231,6 +231,8 @@ async function run() {
   check('logging in issues a new session ID (session fixation)', owner.cookie !== firstSession);
   await other.login(users.other.name, users.other.pw);
   await admin.login(users.admin.name, users.admin.pw);
+  check('registering a username never makes you admin', (await admin.req('GET', '/api/me')).json.isAdmin === false);
+  await db.collection('users').updateOne({ username: ADMIN }, { $set: { isAdmin: true } }); // what `npm run admin -- grant` does
   await ownerPhone.login(users.owner.name, users.owner.pw);
   check('/api/me reports admin status correctly',
     (await admin.req('GET', '/api/me')).json.isAdmin === true && (await other.req('GET', '/api/me')).json.isAdmin === false);
@@ -316,10 +318,10 @@ async function run() {
     && afterEdit.username === users.owner.name && String(afterEdit.userId) === String(ownerDoc._id));
   check('edit rejects object title (NoSQL injection)', (await edit(owner, post._id, { title: { $gt: '' } })).status === 400);
   check('other users cannot delete (403)', (await other.req('DELETE', `/api/posts/${renamed.json.post._id}`)).status === 403);
-  const ownerFeedView = (await owner.req('GET', '/api/posts/sec_owner')).json;
-  const otherFeedView = (await other.req('GET', '/api/posts/sec_owner')).json;
+  const ownerFeedView = (await owner.req('GET', '/api/posts/sec_owner')).json.posts;
+  const otherFeedView = (await other.req('GET', '/api/posts/sec_owner')).json.posts;
   check('canDelete is only true for the owner (and admins)', ownerFeedView.every(p => p.canDelete) && otherFeedView.every(p => !p.canDelete)
-    && (await admin.req('GET', '/api/posts/sec_owner')).json.every(p => p.canDelete));
+    && (await admin.req('GET', '/api/posts/sec_owner')).json.posts.every(p => p.canDelete));
 
   // ---------------------------------------------------------------
   group('Likes');
@@ -329,8 +331,8 @@ async function run() {
   await other.req('DELETE', likeUrl);
   check('unliking twice never goes below zero', (await other.req('DELETE', likeUrl)).json.likeCount === 0);
   await other.req('POST', likeUrl);
-  check('likedByMe is per user', (await other.req('GET', '/api/posts/sec_owner')).json.find(p => p._id === post._id).likedByMe === true
-    && (await owner.req('GET', '/api/posts/sec_owner')).json.find(p => p._id === post._id).likedByMe === false);
+  check('likedByMe is per user', (await other.req('GET', '/api/posts/sec_owner')).json.posts.find(p => p._id === post._id).likedByMe === true
+    && (await owner.req('GET', '/api/posts/sec_owner')).json.posts.find(p => p._id === post._id).likedByMe === false);
 
   // ---------------------------------------------------------------
   group('Comments');
@@ -441,6 +443,123 @@ async function run() {
   check('expired links are rejected', (await resetPw(token2, strongPassword('z'))).status === 400);
 
   // ---------------------------------------------------------------
+  group('Audit fixes: headers, scripts and cross-site requests');
+  const pageRes = await anon.req('GET', '/feed.html');
+  const csp = pageRes.headers.get('content-security-policy') || '';
+  check('Content-Security-Policy blocks inline scripts', /script-src 'self'(;|$)/.test(csp) && !/script-src[^;]*unsafe-inline/.test(csp), csp);
+  check('CSP forbids other sites from framing pages', csp.includes("frame-ancestors 'none'"));
+  check('X-Frame-Options: DENY', pageRes.headers.get('x-frame-options') === 'DENY');
+  check('Referrer-Policy is set', !!pageRes.headers.get('referrer-policy'));
+  check('X-Powered-By is not sent', !pageRes.headers.get('x-powered-by'));
+  const htmlFiles = fs.readdirSync(path.join(ROOT, 'public')).filter(f => f.endsWith('.html'));
+  const inlineProblems = htmlFiles.filter(f => {
+    const html = fs.readFileSync(path.join(ROOT, 'public', f), 'utf8');
+    return /<script(?![^>]*\ssrc=)[^>]*>/i.test(html) || /\son[a-z]+\s*=\s*["']/i.test(html);
+  });
+  check('no page has inline scripts or onclick-style handlers (CSP compatible)', inlineProblems.length === 0, inlineProblems.join(', '));
+  for (const f of fs.readdirSync(path.join(ROOT, 'public', 'js'))) {
+    check(`page script js/${f} is served`, (await anon.req('GET', `/js/${f}`)).status === 200);
+  }
+  const formLogin = await fetch(BASE + '/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `username=${users.other.name}&password=${encodeURIComponent(users.other.pw)}`,
+  });
+  check('classic HTML form posts are not accepted (login CSRF)', formLogin.status === 400 && !formLogin.headers.get('set-cookie'));
+  const crossSite = await anon.req('POST', '/api/login', { username: users.other.name, password: users.other.pw }, { headers: { Origin: 'https://evil.example' } });
+  check('API changes from another website are blocked (CSRF)', crossSite.status === 403 && !crossSite.setCookie);
+  const sameSite = await client().req('POST', '/api/login', { username: users.other.name, password: users.other.pw }, { headers: { Origin: BASE } });
+  check('requests from ArtPing itself still work', sameSite.status === 200);
+  check('leftover /secret test route is gone', (await other.req('GET', '/secret')).status === 404);
+
+  group('Audit fixes: input limits and safe failures');
+  const longEmail = `a@${'.'.repeat(60000)}@`;
+  let t0 = Date.now();
+  const redos = await anon.req('POST', '/api/register', { email: longEmail, username: 'sec_redos', password: strongPassword('d') });
+  check('a crafted 60,000-character email is rejected instantly (no server freeze)', redos.status === 400 && Date.now() - t0 < 500, `${Date.now() - t0} ms`);
+  t0 = Date.now();
+  const redos2 = await anon.req('POST', '/api/password/forgot', { email: `a@${'a.'.repeat(30000)}` });
+  check('forgot-password rejects a crafted email instantly', redos2.status === 400 && Date.now() - t0 < 500, `${Date.now() - t0} ms`);
+  for (const [name, why] of [['ab', 'too short'], ['x'.repeat(31), 'too long'], ['<b>hi</b>', 'HTML'], ['..', 'dots'], ['has space', 'spaces']]) {
+    check(`username rejected: ${why}`, (await register(name, strongPassword('u'), 'valid@example.test')).text.includes('usernames must be'));
+  }
+  const looksAlike = await register(users.other.name.toUpperCase(), strongPassword('l'), 'lookalike@example.test');
+  check('usernames differing only by capitals are refused (no look-alikes)', looksAlike.status === 409, looksAlike.text);
+  check('login ignores capital letters in the username', (await client().login(users.other.name.toUpperCase(), users.other.pw)).status === 200);
+  const trimmed = await register('  sec_trim  ', strongPassword('t'), 'trim@example.test');
+  check('spaces around a username are trimmed', trimmed.json && trimmed.json.username === 'sec_trim');
+  const bio = (body) => other.req('PUT', '/api/profile', body);
+  check('bio over 500 characters rejected', (await bio({ bio: 'x'.repeat(501) })).status === 400);
+  check('pronouns over 40 characters rejected', (await bio({ pronouns: 'x'.repeat(41) })).status === 400);
+  check('non-text bio gets 400, not a crash', (await bio({ bio: { $gt: '' } })).status === 400);
+  check('valid bio is saved trimmed', (await bio({ bio: '  I paint.  ', pronouns: ' they/them ' })).json.profile.bio === 'I paint.');
+  for (const url of [`/api/posts/${renamed.json.post._id}/comments`, '/api/reports']) {
+    const r = await other.req('POST', url);
+    check(`empty request to ${url} gets a friendly 4xx, not a 500`, r.status >= 400 && r.status < 500, `got ${r.status}`);
+  }
+  check('empty profile update changes nothing and does not crash', (await other.req('PUT', '/api/profile')).status === 200);
+  check('empty forgot-password request gets 400, not a 500', (await anon.req('POST', '/api/password/forgot')).status === 400);
+  for (let i = 0; i < 5; i++) await upload(owner, png, `page${i}.png`, 'image/png', { title: `page ${i}` });
+  const pagedIds = [];
+  let pc = null;
+  do {
+    const r = (await anon.req('GET', `/api/posts/sec_owner?limit=2${pc ? `&cursor=${encodeURIComponent(pc)}` : ''}`)).json;
+    pagedIds.push(...r.posts.map(p => p._id));
+    pc = r.nextCursor;
+  } while (pc);
+  check('profile posts come in pages, each post once', pagedIds.length >= 9 && new Set(pagedIds).size === pagedIds.length, `${pagedIds.length} posts`);
+  check('profile posts reject a bad cursor', (await anon.req('GET', '/api/posts/sec_owner?cursor=nope')).status === 400);
+
+  group('Audit fixes: reset links work exactly once, even at the same instant');
+  await anon.req('POST', '/api/password/forgot', { email: 'sec_other@example.test' }, { headers: { 'X-Forwarded-For': '10.7.7.7' } });
+  await new Promise(r => setTimeout(r, 300));
+  const raceToken = new URL(resetLinkFor(users.other.name)).searchParams.get('token');
+  const otherNewPw = strongPassword('q');
+  const raceReset = () => anon.req('POST', '/api/password/reset', { token: raceToken, password: otherNewPw }, { headers: { 'X-Forwarded-For': '10.7.7.7' } });
+  const raceResults = await Promise.all([raceReset(), raceReset(), raceReset()]);
+  check('3 simultaneous uses of one reset link: exactly one succeeds', raceResults.filter(r => r.status === 200).length === 1,
+    raceResults.map(r => r.status).join(','));
+  users.other.pw = otherNewPw;
+  await other.login(users.other.name, users.other.pw);
+
+  group('Audit fixes: admin is a setting on the account');
+  await db.collection('users').updateOne({ username: ADMIN }, { $set: { isAdmin: false } });
+  check('removing admin takes effect immediately', (await admin.req('GET', '/api/admin/reports')).status === 403
+    && (await admin.req('GET', '/api/me')).json.isAdmin === false);
+  await db.collection('users').updateOne({ username: ADMIN }, { $set: { isAdmin: true } });
+  check('granting admin takes effect immediately', (await admin.req('GET', '/api/admin/reports')).status === 200);
+
+  group('Your data and account deletion');
+  check('data download requires login', (await anon.req('GET', '/api/account/export')).status === 401);
+  const exported = await other.req('GET', '/api/account/export');
+  check('data download works and is offered as a file', exported.status === 200 && /attachment/.test(exported.headers.get('content-disposition') || ''));
+  check('data download includes your account and profile', exported.json && exported.json.account.username === users.other.name && exported.json.profile.bio === 'I paint.');
+  check('data download never includes password hashes or reset tokens', !/\$2[aby]\$|resetToken|sessionVersion/.test(exported.text));
+  // Give the user something to delete: a post (liked + commented by others), a comment, a like and follows
+  const victimPost = (await upload(other, png, 'mine.png', 'image/png', { title: 'to be deleted' })).json.post;
+  await owner.req('POST', `/api/posts/${victimPost._id}/like`);
+  await owner.req('POST', `/api/posts/${victimPost._id}/comments`, { text: 'nice' });
+  const ownersPost = renamed.json.post._id;
+  await other.req('POST', `/api/posts/${ownersPost}/like`);
+  await other.req('POST', `/api/posts/${ownersPost}/comments`, { text: 'from other' });
+  const before = await db.collection('posts').findOne({ _id: new mongoose.Types.ObjectId(ownersPost) });
+  const otherPfp = await other.req('POST', '/api/profile/pfp', imageForm(png, 'p.png', 'image/png', {}, 'pfp'));
+  check('account deletion requires the right password', (await other.req('POST', '/api/account/delete', { password: 'Wrong-pass1!' })).status === 401);
+  const del = await other.req('POST', '/api/account/delete', { password: users.other.pw });
+  check('account deletion works', del.status === 200, del.text);
+  await new Promise(r => setTimeout(r, 300));
+  const otherId = (await db.collection('users').findOne({ username: users.other.name }));
+  const after = await db.collection('posts').findOne({ _id: new mongoose.Types.ObjectId(ownersPost) });
+  check('the account is gone', !otherId);
+  check('their posts and post images are gone', !await db.collection('posts').findOne({ username: users.other.name })
+    && !fs.existsSync(path.join(UPLOADS, victimPost.filename)));
+  check('their profile and profile picture are gone', !await db.collection('profiles').findOne({ username: users.other.name })
+    && !fs.existsSync(path.join(UPLOADS, path.basename(otherPfp.json.pfp))));
+  check('their likes and comments on others\' posts are removed, counts corrected',
+    after.likeCount === before.likeCount - 1 && after.commentCount === before.commentCount - 1);
+  check('their follows are removed', (await anon.req('GET', '/api/profile/sec_owner')).json.followerCount === 0);
+  check('they are logged out and cannot log back in', (await other.req('GET', '/api/me')).json.username === null
+    && (await client().login(users.other.name, users.other.pw)).status === 401);
+
   group('Rate limits (run last; they lock this test server out)');
   let limited = null;
   for (let i = 0; i < 8 && !limited; i++) {
@@ -463,6 +582,23 @@ async function run() {
   check('account creation is rate limited', !!regLimited);
 
   // ---------------------------------------------------------------
+  let accountLimited = null;
+  for (let i = 0; i < 25 && !accountLimited; i++) {
+    const r = await anon.req('POST', '/api/login', { username: users.admin.name, password: 'Wrong-pass1!' },
+      { headers: { 'X-Forwarded-For': `10.0.${i}.1` } });
+    if (r.status === 429) accountLimited = r;
+  }
+  check('one account is protected even when guesses come from many IPs', !!accountLimited);
+  let attemptLimited = null;
+  for (let i = 0; i < 35 && !attemptLimited; i++) {
+    const r = await anon.req('POST', '/api/register', { email: 'bad', username: 'x', password: 'y' },
+      { headers: { 'X-Forwarded-For': '10.9.9.9' } });
+    if (r.status === 429) attemptLimited = r;
+  }
+  check('failed sign-up attempts are rate limited too', !!attemptLimited);
+  check('rate-limit hits are logged', serverLog.includes('[rate limit]'));
+  check('failed logins are logged without the password', serverLog.includes('[security] Failed login') && !serverLog.includes('Wrong-pass1!'));
+
   group('Server health');
   check('no unexpected server errors were logged', !/Unhandled error|Uncaught exception|Unhandled Rejection/.test(serverLog),
     (serverLog.match(/(Unhandled error|Uncaught exception|Unhandled Rejection)[^\n]*/) || [''])[0]);

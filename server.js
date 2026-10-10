@@ -6,7 +6,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const app = express();
-const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const rateLimit = require('express-rate-limit');
@@ -26,32 +25,59 @@ if (!process.env.SESSION_SECRET) {
   process.exit(1);
 }
 
-// Hosts put the app behind an HTTPS proxy; this lets Express see the real
-// client IP (for rate limiting) and know the connection was HTTPS (for secure cookies)
-app.set('trust proxy', 1);
+// Which proxies to trust for the visitor's real IP (used by rate limits) and for HTTPS detection.
+// Default 'loopback' trusts nothing from the internet, so visitors can't fake their IP with an
+// X-Forwarded-For header. On a host, set TRUST_PROXY to what the host documents (often 1).
+const trustProxy = process.env.TRUST_PROXY || 'loopback';
+if (isProduction && !process.env.TRUST_PROXY) {
+  console.warn('WARNING: TRUST_PROXY is not set. Behind a host\'s proxy, logins (secure cookies) and rate limits will not work correctly. Set it to what your host documents (often 1).');
+}
+app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+app.disable('x-powered-by'); // don't advertise the framework
 
-// Browsers must use the file type we send, never guess it from the contents
-// (stops an uploaded file from being treated as a page or script)
+// Security headers on every response
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",                     // only our own .js files; no inline scripts
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",            // blob: = image preview on the upload page
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",                // no other site may embed ArtPing (clickjacking)
+].join('; ');
 app.use((req, res, next) => {
-  res.set('X-Content-Type-Options', 'nosniff');
+  res.set({
+    'X-Content-Type-Options': 'nosniff',   // browsers must use the type we send, never guess it
+    'X-Frame-Options': 'DENY',             // older browsers' version of frame-ancestors
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+  });
+  if (isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); // HTTPS only
   next();
 });
 
 // Serve static files from the 'public' directory
-app.use(express.static('public'));
-// Routes demonstrating route params, query strings, middleware, and async handling
-app.use(express.json({ limit: '100kb' })); // for parsing application/json
-app.use(express.urlencoded({ extended: true }));
-// Cookie parser middleware (must be registered before routes that access req.cookies)
-app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+// JSON only: the pages never send classic HTML forms, so other sites can't submit forms to the API
+app.use(express.json({ limit: '100kb' }));
+// Requests without a body still get an empty object, so handlers can always read req.body
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 // Connect to MongoDB
 mongoose.connect(mongoUri)
 .then(() => console.log('Connected to MongoDB'))
 .catch((err) => console.error('MongoDB connection error:', err));
 app.use(session({
+  name: 'artping.sid',
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: true,             // each visit restarts the 7 days, so inactive logins expire
   store: MongoStore.create({ mongoUrl: mongoUri }),
   cookie: {
     httpOnly: true,          // page scripts can't read the cookie
@@ -60,6 +86,19 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24 * 7, // stay logged in for 7 days
   },
 }));
+
+// Refuse API changes sent from other websites (cross-site request forgery).
+// Browsers always say which site a request came from in the Origin header.
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const origin = req.get('origin');
+  if (origin) {
+    let sameSite = false;
+    try { sameSite = new URL(origin).host === req.get('host'); } catch { /* malformed */ }
+    if (!sameSite) return res.status(403).send('Sorry, that request came from another website and was blocked.');
+  }
+  next();
+});
 
 // Messages shown to users. Keep them friendly and never reveal internal details.
 const MSG = {
@@ -87,23 +126,42 @@ function limiter(windowMinutes, limit, message, options = {}) {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message,
+    // Log every time a limit is hit, so attacks show up in the server log
+    handler: (req, res, next, opts) => {
+      console.warn(`[rate limit] ${req.method} ${req.originalUrl} blocked for ${req.ip}`
+        + (req.session && req.session.username ? ` (user ${req.session.username})` : ''));
+      res.status(opts.statusCode).send(opts.message);
+    },
     ...options,
   });
 }
 const loginLimiter = limiter(15, 10,
   'Sorry, too many login attempts. Please wait 15 minutes and try again.',
   { skipSuccessfulRequests: true }); // only failed logins count toward the limit
+// Also limit failed logins per account, so guessing one person's password from many IPs is slow too
+const accountLoginLimiter = limiter(60, 20,
+  'Sorry, too many login attempts for this account. Please wait a while and try again, or reset your password.',
+  {
+    skipSuccessfulRequests: true,
+    keyGenerator: req => `user:${String(req.body.username || '').trim().toLowerCase()}`,
+  });
 const registerLimiter = limiter(60, 5,
   'Sorry, too many accounts have been created from here. Please try again in an hour.',
   { skipFailedRequests: true }); // only accounts actually created count, so typos don't lock people out
-const commentLimiter = limiter(10, 30, 'Sorry, you\'re commenting too fast. Please wait a few minutes.');
-const reportLimiter = limiter(60, 20, 'Sorry, you\'ve sent too many reports. Please try again later.');
-const uploadLimiter = limiter(60, 30, 'Sorry, you\'ve uploaded a lot recently. Please try again in an hour.');
+// Caps all sign-up attempts (including failed ones), so the form can't be used to probe or overload the server
+const registerAttemptLimiter = limiter(15, 30, 'Sorry, too many sign-up attempts. Please wait 15 minutes and try again.');
+const commentLimiter = limiter(10, 30, "Sorry, you're commenting too fast. Please wait a few minutes.");
+const reportLimiter = limiter(60, 20, "Sorry, you've sent too many reports. Please try again later.");
+const uploadLimiter = limiter(60, 30, "Sorry, you've uploaded a lot recently. Please try again in an hour.");
 const forgotPasswordLimiter = limiter(15, 5, 'Sorry, too many password reset requests. Please wait 15 minutes and try again.');
 const resetPasswordLimiter = limiter(15, 10, 'Sorry, too many attempts. Please wait 15 minutes and try again.');
 const passwordChangeLimiter = limiter(15, 10,
   'Sorry, too many attempts. Please wait 15 minutes and try again.',
   { skipSuccessfulRequests: true });
+// Everyday actions (likes, follows, edits, deletes): generous, but stops bots and scripts
+const actionLimiter = limiter(1, 120,
+  "Sorry, you're doing that too fast. Please slow down for a minute.",
+  { keyGenerator: req => (req.session && req.session.userId ? `user:${req.session.userId}` : `ip:${req.ip}`) });
 
 function isAuthenticated(req, res, next) {
   if (req.session && req.session.userId) {
@@ -133,24 +191,53 @@ function passwordProblem(password) {
 const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true },
   username: { type: String, unique: true, required: true },
+  // Lower-case copy of the username, so "Alice" and "alice" can't both exist (no look-alike accounts)
+  usernameLower: { type: String, unique: true, sparse: true },
   password: { type: String, required: true },
+  // Admin rights live on the account and are granted with `npm run admin -- grant <username>`.
+  // Never based on the username alone, so nobody can become admin by registering a name first.
+  isAdmin: { type: Boolean, default: false },
   // Goes up whenever the password changes; sessions from before that are logged out
   sessionVersion: { type: Number, default: 0 },
   // Password reset: only a hash of the emailed token is stored, so a database leak can't be used to reset passwords
   resetTokenHash: { type: String, default: null },
   resetTokenExpires: { type: Date, default: null },
 }, { timestamps: true });
+userSchema.pre('validate', function () {
+  if (this.username) this.usernameLower = this.username.toLowerCase();
+});
 const User = mongoose.model('User', userSchema);
 
-// Log out sessions that started before the user's last password change (or whose account is gone)
+// One-time upgrade for accounts created before usernameLower existed
+mongoose.connection.once('open', async () => {
+  try {
+    const old = await User.find({ usernameLower: { $exists: false } }).select('username');
+    for (const user of old) {
+      try {
+        await User.updateOne({ _id: user._id }, { $set: { usernameLower: user.username.toLowerCase() } });
+      } catch (error) {
+        console.warn(`Username "${user.username}" differs from another only by capital letters; it can still log in by exact name.`);
+      }
+    }
+  } catch (error) {
+    console.error('Username upgrade error:', error);
+  }
+});
+
+// Runs on every request from a logged-in visitor:
+//  - logs out sessions from before the user's last password change (or whose account is gone)
+//  - loads admin status fresh from the database, so granting or removing admin applies right away
 app.use(async (req, res, next) => {
+  req.isAdmin = false;
   if (!req.session || !req.session.userId) return next();
   try {
-    const user = await User.findById(req.session.userId).select('sessionVersion').lean();
+    const user = await User.findById(req.session.userId).select('sessionVersion isAdmin').lean();
     if (!user || (user.sessionVersion || 0) !== (req.session.sessionVersion || 0)) {
       delete req.session.userId;
       delete req.session.username;
       delete req.session.sessionVersion;
+    } else {
+      req.isAdmin = !!user.isAdmin;
     }
     next();
   } catch (error) {
@@ -181,8 +268,8 @@ const Post = mongoose.model('Post', postSchema);
 const profileSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   username: { type: String, required: true },
-  bio: { type: String, default: '' },
-  pronouns: { type: String, default: '' },
+  bio: { type: String, default: '', maxlength: 500 },
+  pronouns: { type: String, default: '', maxlength: 40 },
   pfp: { type: String, default: '' },
 }, { timestamps: true });
 
@@ -243,12 +330,10 @@ reportSchema.index({ status: 1, createdAt: -1 });
 
 const Report = mongoose.model('Report', reportSchema);
 
-// Admins can review reports. Set ADMIN_USERNAMES in .env, e.g. ADMIN_USERNAMES=alice,bob
-const adminUsernames = new Set(
-  (process.env.ADMIN_USERNAMES || '').split(',').map(name => name.trim()).filter(Boolean)
-);
+// Admins can review reports. Admin status is the isAdmin flag on the account (loaded above);
+// grant it with `npm run admin -- grant <username>`.
 function isAdmin(req) {
-  return !!(req.session && req.session.username && adminUsernames.has(req.session.username));
+  return !!(req.session && req.session.userId && req.isAdmin);
 }
 function requireAdmin(req, res, next) {
   if (!req.session || !req.session.userId) return res.status(401).send(MSG.loginRequired);
@@ -438,7 +523,7 @@ app.post('/api/upload', isAuthenticated, uploadLimiter, receiveImage('image', PO
 });
 
 //Edit your own post's title and description
-app.put('/api/posts/:id', isAuthenticated, async (req, res) => {
+app.put('/api/posts/:id', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).send(MSG.postNotFound);
     const { title, description } = req.body || {};
@@ -491,7 +576,7 @@ app.get('/api/profile/:username', async (req, res) => {
 });
 
 //Follow a user
-app.post('/api/users/:username/follow', isAuthenticated, async (req, res) => {
+app.post('/api/users/:username/follow', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     const target = await User.findOne({ username: req.params.username }).select('_id');
     if (!target) return res.status(404).send(MSG.userNotFound);
@@ -511,7 +596,7 @@ app.post('/api/users/:username/follow', isAuthenticated, async (req, res) => {
 });
 
 //Unfollow a user
-app.delete('/api/users/:username/follow', isAuthenticated, async (req, res) => {
+app.delete('/api/users/:username/follow', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     const target = await User.findOne({ username: req.params.username }).select('_id');
     if (!target) return res.status(404).send(MSG.userNotFound);
@@ -579,7 +664,7 @@ app.get('/api/users/:username/followers', (req, res) => listFollows(req, res, 'f
 app.get('/api/users/:username/following', (req, res) => listFollows(req, res, 'following'));
 
 //Like a post
-app.post('/api/posts/:id/like', isAuthenticated, async (req, res) => {
+app.post('/api/posts/:id/like', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).send(MSG.postNotFound);
     if (!await Post.exists({ _id: req.params.id })) return res.status(404).send(MSG.postNotFound);
@@ -600,7 +685,7 @@ app.post('/api/posts/:id/like', isAuthenticated, async (req, res) => {
 });
 
 //Unlike a post
-app.delete('/api/posts/:id/like', isAuthenticated, async (req, res) => {
+app.delete('/api/posts/:id/like', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).send(MSG.postNotFound);
 
@@ -619,7 +704,7 @@ app.delete('/api/posts/:id/like', isAuthenticated, async (req, res) => {
 });
 
 //Delete a post (its owner, or an admin). Also removes its likes, comments, reports and image file.
-app.delete('/api/posts/:id', isAuthenticated, async (req, res) => {
+app.delete('/api/posts/:id', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).send(MSG.postNotFound);
     const post = await Post.findById(req.params.id).lean();
@@ -713,7 +798,7 @@ app.post('/api/posts/:id/comments', isAuthenticated, commentLimiter, async (req,
 });
 
 //Delete a comment (its author, the post's owner, or an admin)
-app.delete('/api/comments/:id', isAuthenticated, async (req, res) => {
+app.delete('/api/comments/:id', isAuthenticated, actionLimiter, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).send(MSG.commentNotFound);
     const comment = await Comment.findById(req.params.id).lean();
@@ -844,8 +929,22 @@ app.post('/api/admin/reports/resolve', requireAdmin, async (req, res) => {
   }
 });
 
+// Bio and pronouns: plain text with a length limit; returns an error message or null
+const BIO_MAX_LENGTH = 500;
+const PRONOUNS_MAX_LENGTH = 40;
+function profileTextProblem(bio, pronouns) {
+  for (const [value, max, label] of [[bio, BIO_MAX_LENGTH, 'bios'], [pronouns, PRONOUNS_MAX_LENGTH, 'pronouns']]) {
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string') return MSG.badRequest;
+    if (value.trim().length > max) return `Sorry, ${label} can be at most ${max} characters.`;
+  }
+  return null;
+}
+
 //Creating profile route
-app.post('/api/profile', isAuthenticated, async (req, res) => {
+app.post('/api/profile', isAuthenticated, actionLimiter, async (req, res) => {
+  const textProblem = profileTextProblem(req.body.bio, req.body.pronouns);
+  if (textProblem) return res.status(400).send(textProblem);
   try {
     const existing = await Profile.findOne({ userId: req.session.userId });
     if (existing) return res.status(409).send('You already have a profile.');
@@ -853,8 +952,8 @@ app.post('/api/profile', isAuthenticated, async (req, res) => {
     const newProfile = new Profile({
       userId: req.session.userId,
       username: req.session.username,
-      bio: req.body.bio || '',
-      pronouns: req.body.pronouns || '',
+      bio: (req.body.bio || '').trim(),
+      pronouns: (req.body.pronouns || '').trim(),
       pfp: '',
     });
 
@@ -867,13 +966,15 @@ app.post('/api/profile', isAuthenticated, async (req, res) => {
 });
 
 //Update profile route
-app.put('/api/profile', isAuthenticated, async (req, res) =>{
+app.put('/api/profile', isAuthenticated, actionLimiter, async (req, res) => {
+  const textProblem = profileTextProblem(req.body.bio, req.body.pronouns);
+  if (textProblem) return res.status(400).send(textProblem);
   try {
     const profile = await Profile.findOne({ userId: req.session.userId });
     if (!profile) return res.status(404).send(MSG.profileNotFound);
 
-    profile.bio = req.body.bio ?? profile.bio;
-    profile.pronouns = req.body.pronouns ?? profile.pronouns;
+    if (typeof req.body.bio === 'string') profile.bio = req.body.bio.trim();
+    if (typeof req.body.pronouns === 'string') profile.pronouns = req.body.pronouns.trim();
 
     await profile.save();
     res.json({ success: true, profile });
@@ -914,6 +1015,8 @@ app.post('/api/profile/pfp', isAuthenticated, uploadLimiter, receiveImage('pfp',
 const FEED_FIELDS = {
   username: 1, userId: 1, title: 1, description: 1, filepath: 1, createdAt: 1, likeCount: 1, commentCount: 1,
 };
+
+const TRENDING_CANDIDATES = 1000; // Trending ranks the newest 1000 posts
 
 app.get('/api/feed', async (req, res) => {
   try {
@@ -966,6 +1069,8 @@ app.get('/api/feed', async (req, res) => {
       const ageHours = { $divide: [{ $subtract: [new Date(), '$createdAt'] }, 1000 * 60 * 60] };
       posts = await Post.aggregate([
         { $match: filter },
+        { $sort: { createdAt: -1 } },
+        { $limit: TRENDING_CANDIDATES },
         { $addFields: { score: { $divide: [
           { $ifNull: ['$likeCount', 0] },
           { $pow: [{ $add: [ageHours, 2] }, 1.5] },
@@ -990,26 +1095,59 @@ app.get('/api/feed', async (req, res) => {
 });
 
 //Get posts by username
+// GET /api/posts/:username?limit=24&cursor=<nextCursor>  ->  { posts, nextCursor }
 app.get('/api/posts/:username', async (req, res) => {
   try {
-    const posts = await Post.find({ username: req.params.username })
-      .sort({ createdAt: -1 })
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 24, 1), 50);
+    const filter = { username: req.params.username };
+    if (req.query.cursor) {
+      const [time, id] = String(req.query.cursor).split('_');
+      const date = new Date(time);
+      if (isNaN(date) || !mongoose.Types.ObjectId.isValid(id)) return res.status(400).send(MSG.badRequest);
+      filter.$or = [
+        { createdAt: { $lt: date } },
+        { createdAt: date, _id: { $lt: new mongoose.Types.ObjectId(id) } },
+      ];
+    }
+    const posts = await Post.find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit + 1)
       .select(FEED_FIELDS)
       .lean();
+    const hasMore = posts.length > limit;
+    if (hasMore) posts.pop();
+    const last = posts[posts.length - 1];
     await decoratePosts(posts, req.session.userId, isAdmin(req));
-    res.json(posts);
+    res.json({ posts, nextCursor: hasMore ? `${last.createdAt.toISOString()}_${last._id}` : null });
   } catch (error) {
     serverError(res, 'Post fetch error', error);
   }
 });
 
-app.get('/secret', isAuthenticated, (req, res) => {
-  res.send('Welcome');
-});
 
 // ===== Accounts =====
 const BCRYPT_ROUNDS = 10;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Emails: the length is capped before the pattern runs, and the pattern has no overlapping parts,
+// so a crafted "email" can't make it run slowly and freeze the server
+const EMAIL_MAX_LENGTH = 254;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
+function validEmail(email) {
+  return typeof email === 'string' && email.length <= EMAIL_MAX_LENGTH && EMAIL_PATTERN.test(email);
+}
+// Usernames appear on every post and in links: 3-30 letters, numbers or underscores
+const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,30}$/;
+const USERNAME_RULES = 'Sorry, usernames must be 3–30 characters and use only letters, numbers and underscores (_).';
+
+// For log lines: quotes the value and cuts it short, so user input can't fake extra log lines
+function logValue(value) {
+  return JSON.stringify(String(value).slice(0, 60));
+}
+
+// Finds an account by username, ignoring capital letters (older accounts fall back to the exact name)
+async function findUserByName(username) {
+  const name = username.trim();
+  return (await User.findOne({ usernameLower: name.toLowerCase() })) || User.findOne({ username: name });
+}
 
 // Log a user in: new session ID (so a session ID planted before login can't be reused),
 // remembering which password "version" this session belongs to
@@ -1027,20 +1165,22 @@ function startSession(req, res, user) {
 }
 
 // Registration route with password hashing
-app.post('/api/register', registerLimiter, async (req, res) => {
-  const { email, username, password } = req.body || {};
+app.post('/api/register', registerAttemptLimiter, registerLimiter, async (req, res) => {
+  const { email, username, password } = req.body;
   // Must be plain text (not objects like {"$gt": ""}) and not empty
   if (![email, username, password].every(v => typeof v === 'string' && v.trim())) {
     return res.status(400).send('Please fill in your email, username and password.');
   }
   const normalizedEmail = email.trim().toLowerCase();
-  if (!EMAIL_PATTERN.test(normalizedEmail)) return res.status(400).send('Please enter a valid email address.');
+  const name = username.trim();
+  if (!validEmail(normalizedEmail)) return res.status(400).send('Please enter a valid email address.');
+  if (!USERNAME_PATTERN.test(name)) return res.status(400).send(USERNAME_RULES);
   const problem = passwordProblem(password);
   if (problem) return res.status(400).send(problem);
 
   try {
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const newUser = new User({ email: normalizedEmail, username, password: hashedPassword });
+    const newUser = new User({ email: normalizedEmail, username: name, password: hashedPassword });
     await newUser.save();
 
     const newProfile = new Profile({
@@ -1064,17 +1204,18 @@ app.post('/api/register', registerLimiter, async (req, res) => {
 });
 
 // Login route with password verification
-app.post('/api/login', loginLimiter, async (req, res) => {
-  const { username, password } = req.body || {};
+app.post('/api/login', loginLimiter, accountLoginLimiter, async (req, res) => {
+  const { username, password } = req.body;
   // Must be plain text, so {"$gt": ""} can't be used to match any user
-  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+  if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
     return res.status(400).send('Please enter your username and password.');
   }
 
   try {
-    const user = await User.findOne({ username });
+    const user = await findUserByName(username);
     // Same message whether the username or the password is wrong, so it can't be used to find accounts
     if (!user || !await bcrypt.compare(password, user.password)) {
+      console.warn(`[security] Failed login for ${logValue(username)} from ${req.ip}`);
       return res.status(401).send('Sorry, that username and password don\'t match. Please try again.');
     }
     startSession(req, res, user);
@@ -1090,10 +1231,10 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-app.post("/api/logout", (req, res) => {
+app.post('/api/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) return serverError(res, 'Logout error', err);
-    res.clearCookie("connect.sid");
+    res.clearCookie('artping.sid');
     res.json({ ok: true });
   });
 });
@@ -1134,49 +1275,51 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-// Step 1: ask for a reset link. Always gives the same answer, so it can't be used to find out who has an account.
+// Step 1: ask for a reset link. Always gives the same answer, at the same speed,
+// so it can't be used to find out who has an account.
 app.post('/api/password/forgot', forgotPasswordLimiter, async (req, res) => {
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-  if (!EMAIL_PATTERN.test(email)) return res.status(400).send('Please enter a valid email address.');
-  const answer = 'If an account uses that email, we\'ve sent a link to reset your password. Check your inbox (and spam folder).';
+  if (!validEmail(email)) return res.status(400).send('Please enter a valid email address.');
+  res.json({
+    message: 'If an account uses that email, we\'ve sent a link to reset your password. Check your inbox (and spam folder).',
+  });
 
+  // The slow part happens after answering
   try {
     const user = await User.findOne({ email });
-    if (user) {
-      const token = crypto.randomBytes(32).toString('hex');
-      user.resetTokenHash = hashToken(token);
-      user.resetTokenExpires = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
-      await user.save();
-      try {
-        await sendResetEmail(user, `${APP_URL}/reset-password.html?token=${token}`);
-      } catch (error) {
-        console.error('Reset email error:', error);
-      }
-    }
-    res.json({ message: answer });
+    if (!user) return;
+    const token = crypto.randomBytes(32).toString('hex');
+    user.resetTokenHash = hashToken(token);
+    user.resetTokenExpires = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
+    await user.save();
+    console.log(`[security] Password reset requested for ${user.username} from ${req.ip}`);
+    await sendResetEmail(user, `${APP_URL}/reset-password.html?token=${token}`);
   } catch (error) {
-    serverError(res, 'Forgot password error', error);
+    console.error('Forgot password error:', error);
   }
 });
 
 // Step 2: choose a new password using the emailed link
 app.post('/api/password/reset', resetPasswordLimiter, async (req, res) => {
-  const { token, password } = req.body || {};
+  const { token, password } = req.body;
   const invalidLink = 'Sorry, this reset link is invalid or has expired. Please request a new one.';
   if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return res.status(400).send(invalidLink);
   const problem = passwordProblem(password);
   if (problem) return res.status(400).send(problem);
 
   try {
-    const user = await User.findOne({ resetTokenHash: hashToken(token), resetTokenExpires: { $gt: new Date() } });
+    // Claim the link and clear it in one step, so it works exactly once even if submitted twice at the same instant
+    const user = await User.findOneAndUpdate(
+      { resetTokenHash: hashToken(token), resetTokenExpires: { $gt: new Date() } },
+      { $set: { resetTokenHash: null, resetTokenExpires: null } },
+      { new: true }
+    );
     if (!user) return res.status(400).send(invalidLink);
 
     user.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    user.resetTokenHash = null; // the link works only once
-    user.resetTokenExpires = null;
     user.sessionVersion = (user.sessionVersion || 0) + 1; // log out everywhere
     await user.save();
-    console.log('Password reset for:', user.username);
+    console.log(`[security] Password reset completed for ${user.username}`);
     res.json({ ok: true });
   } catch (error) {
     serverError(res, 'Password reset error', error);
@@ -1208,9 +1351,92 @@ app.post('/api/account/password', isAuthenticated, passwordChangeLimiter, async 
     user.sessionVersion = (user.sessionVersion || 0) + 1; // logs out other devices...
     await user.save();
     req.session.sessionVersion = user.sessionVersion;   // ...but keeps this one logged in
+    console.log(`[security] Password changed for ${user.username} from ${req.ip}`);
     res.json({ ok: true });
   } catch (error) {
     serverError(res, 'Password change error', error);
+  }
+});
+
+// ===== Your data and account deletion (privacy rights, e.g. GDPR/CCPA) =====
+// Download everything ArtPing stores about you, as a JSON file
+app.get('/api/account/export', isAuthenticated, actionLimiter, async (req, res) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.session.userId);
+    const [user, profile, posts, comments, likes, following, followers, reports] = await Promise.all([
+      User.findById(userId).select('username email createdAt isAdmin').lean(),
+      Profile.findOne({ userId }).select('bio pronouns pfp createdAt').lean(),
+      Post.find({ userId }).select('title description filepath likeCount commentCount createdAt updatedAt').lean(),
+      Comment.find({ userId }).select('postId text createdAt').lean(),
+      Like.find({ userId }).select('postId createdAt').lean(),
+      Follow.find({ followerId: userId }).select('followingId createdAt').lean(),
+      Follow.find({ followingId: userId }).select('followerId createdAt').lean(),
+      Report.find({ reporterId: userId }).select('targetType targetId reason details status createdAt').lean(),
+    ]);
+    if (!user) return res.status(401).send(MSG.loginRequired);
+    const names = await usernamesById([...following.map(f => f.followingId), ...followers.map(f => f.followerId)]);
+    const data = {
+      exportedAt: new Date().toISOString(),
+      account: { username: user.username, email: user.email, createdAt: user.createdAt, isAdmin: !!user.isAdmin },
+      profile,
+      posts: posts.map(p => ({ ...p, imageUrl: `${APP_URL}${p.filepath}` })),
+      comments,
+      likedPostIds: likes.map(l => ({ postId: l.postId, likedAt: l.createdAt })),
+      following: following.map(f => ({ username: names.get(f.followingId.toString()) || null, since: f.createdAt })),
+      followers: followers.map(f => ({ username: names.get(f.followerId.toString()) || null, since: f.createdAt })),
+      reportsYouSent: reports,
+    };
+    console.log(`[security] Data export for ${user.username}`);
+    res.set('Content-Disposition', `attachment; filename="artping-data-${user.username}.json"`);
+    res.json(data);
+  } catch (error) {
+    serverError(res, 'Data export error', error);
+  }
+});
+
+async function usernamesById(ids) {
+  const users = await User.find({ _id: { $in: ids } }).select('username').lean();
+  return new Map(users.map(u => [u._id.toString(), u.username]));
+}
+
+// Permanently delete your account and everything you created. Requires your password.
+app.post('/api/account/delete', isAuthenticated, passwordChangeLimiter, async (req, res) => {
+  const { password } = req.body;
+  if (typeof password !== 'string' || !password) return res.status(400).send('Please enter your password to confirm.');
+
+  try {
+    const user = await User.findById(req.session.userId);
+    if (!user) return res.status(401).send(MSG.loginRequired);
+    if (!await bcrypt.compare(password, user.password)) {
+      return res.status(401).send('Sorry, that password isn\'t right. Your account was not deleted.');
+    }
+    const userId = user._id;
+
+    // Your posts (with their likes, comments, reports and images)
+    for (const post of await Post.find({ userId }).lean()) await deletePostAndRelated(post);
+    // Your comments on other people's posts (keeps their comment counts right)
+    for (const comment of await Comment.find({ userId }).lean()) await deleteComment(comment);
+    // Your likes (keeps like counts right)
+    for (const like of await Like.find({ userId }).lean()) {
+      const removed = await Like.deleteOne({ _id: like._id });
+      if (removed.deletedCount) await Post.updateOne({ _id: like.postId, likeCount: { $gt: 0 } }, { $inc: { likeCount: -1 } });
+    }
+    const profile = await Profile.findOne({ userId }).lean();
+    await Promise.all([
+      Follow.deleteMany({ $or: [{ followerId: userId }, { followingId: userId }] }),
+      Report.deleteMany({ reporterId: userId }),
+      Profile.deleteOne({ userId }),
+      User.deleteOne({ _id: userId }),
+    ]);
+    if (profile && profile.pfp && profile.pfp.startsWith('/uploads/')) deleteUpload(profile.pfp);
+    console.log(`[security] Account deleted: ${user.username}`);
+
+    req.session.destroy(() => {
+      res.clearCookie('artping.sid');
+      res.json({ deleted: true });
+    });
+  } catch (error) {
+    serverError(res, 'Account delete error', error);
   }
 });
 

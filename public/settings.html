@@ -62,57 +62,33 @@
           </div>
         </form>
       </section>
+
+      <section class="settings-section show-signed-in" aria-labelledby="data-heading">
+        <h3 id="data-heading" class="settings-section-title">Download your data</h3>
+        <p class="settings-section-sub">Get a copy of everything ArtPing stores about you: your account details, profile, posts, comments, likes, follows and reports, as a file.</p>
+        <div class="auth-actions settings-actions">
+          <a href="/api/account/export" class="btn-outline" download>Download my data</a>
+        </div>
+      </section>
+
+      <section class="settings-section settings-danger show-signed-in" aria-labelledby="delete-heading">
+        <h3 id="delete-heading" class="settings-section-title">Delete account</h3>
+        <p class="settings-section-sub">Permanently deletes your account, profile, posts, images, comments, likes and follows. This can't be undone. Consider downloading your data first.</p>
+
+        <p id="delete-error" style="color: red; display: none;"></p>
+        <form id="delete-form" class="auth-form">
+          <div class="field">
+            <label for="delete-password">Enter your password to confirm</label>
+            <input type="password" id="delete-password" autocomplete="current-password" required>
+          </div>
+          <div class="auth-actions settings-actions">
+            <button type="submit" class="btn-primary btn-danger">Delete my account</button>
+          </div>
+        </form>
+      </section>
     </main>
   </div>
 
-  <script>
-    const form = document.getElementById('password-form');
-    const current = document.getElementById('current-password');
-    const newPassword = document.getElementById('new-password');
-    const repeat = document.getElementById('repeat-password');
-    const errorMsg = document.getElementById('password-error');
-    const successMsg = document.getElementById('password-success');
-
-    attachPasswordChecklist(newPassword, document.getElementById('password-rules'));
-    attachMatchCheck(newPassword, repeat, document.getElementById('match-note'));
-
-    function showError(text) {
-      successMsg.style.display = 'none';
-      errorMsg.textContent = text;
-      errorMsg.style.display = 'block';
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errorMsg.style.display = 'none';
-      successMsg.style.display = 'none';
-      if (!passwordMeetsRules(newPassword.value)) {
-        return showError("Sorry, your new password doesn't meet all the requirements yet. Check the list under the box.");
-      }
-      if (newPassword.value !== repeat.value) {
-        return showError("Sorry, your new passwords don't match. Please type the same password twice.");
-      }
-
-      const button = form.querySelector('button[type="submit"]');
-      button.disabled = true;
-      try {
-        const res = await fetch('/api/account/password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ currentPassword: current.value, newPassword: newPassword.value })
-        });
-        if (!res.ok) throw new Error(await res.text());
-        form.reset();
-        newPassword.dispatchEvent(new Event('input')); // reset the checklist
-        repeat.dispatchEvent(new Event('input'));
-        successMsg.textContent = 'Your password has been changed. Any other devices have been logged out.';
-        successMsg.style.display = 'block';
-      } catch (err) {
-        showError(err.message || "Sorry, we couldn't reach the server. Please check your connection and try again.");
-      } finally {
-        button.disabled = false;
-      }
-    });
-  </script>
+  <script src="/js/settings.js"></script>
 </body>
 </html>

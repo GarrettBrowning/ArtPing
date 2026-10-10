@@ -38,28 +38,6 @@
     </header>
   </div>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const user = params.get('user');
-    const newuser = params.get('newuser');
-    const msg = document.getElementById('welcome-msg');
-
-    if (user) {
-      msg.textContent = `Welcome back, ${user}!`;
-      msg.classList.add('visible');
-    } else if (newuser) {
-      msg.textContent = `Welcome to ArtPing, ${newuser}! Your account has been created.`;
-      msg.classList.add('visible');
-    }
-
-
-(async () => {
-  const username = await window.authReady;
-  if (username && !user && !newuser) {
-    msg.textContent = `Welcome back, ${username}!`;
-    msg.classList.add('visible');
-  }
-})();
-  </script>
+  <script src="/js/index.js"></script>
 </body>
 </html>

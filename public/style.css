@@ -1674,3 +1674,8 @@ html:not([data-admin="true"]) .show-admin { display: none !important; }
   color: var(--ink-muted);
   margin-bottom: 28px;
 }
+
+/* ===== SETTINGS: SPACING AND DANGER ZONE ===== */
+.settings-section + .settings-section { margin-top: 20px; }
+.settings-danger { border-color: #e8c4bf; }
+.settings-danger .settings-section-title { color: var(--danger); }
