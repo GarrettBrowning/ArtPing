@@ -12,3 +12,5 @@ security-report.md
 *.log
 .DS_Store
 Thumbs.db
+settings.local.json
+10-11-2026 list.md
