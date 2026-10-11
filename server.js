@@ -74,6 +74,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// ===== AI training crawlers =====
+// Blocked from the whole site in robots.txt, and turned away with a 403 below when they announce
+// themselves (some ignore robots.txt). Scrapers that pretend to be a browser get past this; Cloudflare's
+// bot blocking catches more. AI *search* crawlers (OAI-SearchBot, Claude-SearchBot, PerplexityBot),
+// search engines and link-preview bots (Discord, Slack, X, facebookexternalhit) are left allowed.
+// Google-Extended and Applebot-Extended are robots.txt names only (they never visit), so they only
+// matter there; Google-Extended blocks Gemini training, not Google Search.
+const AI_TRAINING_CRAWLERS = [
+  'GPTBot', 'ClaudeBot', 'anthropic-ai', 'Google-Extended', 'Applebot-Extended', 'CCBot',
+  'meta-externalagent', 'Bytespider', 'Amazonbot', 'cohere-training-data-crawler', 'Diffbot',
+  'ImagesiftBot', 'Omgilibot',
+];
+const AI_CRAWLER_NAMES = AI_TRAINING_CRAWLERS.map(bot => bot.toLowerCase());
+
+app.use((req, res, next) => {
+  if (req.path === '/robots.txt') return next(); // let them read the rules
+  const userAgent = String(req.get('user-agent') || '').toLowerCase();
+  if (AI_CRAWLER_NAMES.some(bot => userAgent.includes(bot))) {
+    return res.status(403).type('text/plain').send('Sorry, AI training crawlers are not allowed on ArtPing. See /robots.txt.');
+  }
+  next();
+});
+
 // ===== Pages =====
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -103,15 +126,6 @@ app.use(async (req, res, next) => {
 
 // Pages search engines should list (private pages like Settings are left out)
 const SITEMAP_PATHS = ['/', '/feed.html', '/about.html', '/register.html', '/login.html'];
-
-// Crawlers that collect data for AI training. They are blocked from the whole site in robots.txt.
-// AI *search* crawlers (OAI-SearchBot, Claude-SearchBot, PerplexityBot) are left allowed so ArtPing
-// can still show up in AI search answers; Google-Extended blocks Gemini training, not Google Search.
-const AI_TRAINING_CRAWLERS = [
-  'GPTBot', 'ClaudeBot', 'anthropic-ai', 'Google-Extended', 'Applebot-Extended', 'CCBot',
-  'meta-externalagent', 'Bytespider', 'Amazonbot', 'cohere-training-data-crawler', 'Diffbot',
-  'ImagesiftBot', 'Omgilibot',
-];
 
 app.get('/robots.txt', (req, res) => {
   // robots.txt only asks well-behaved crawlers to stay away; it is not a security measure

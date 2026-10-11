@@ -634,6 +634,34 @@ async function run() {
     && /^Disallow: \/$/m.test(aiGroup) && !/^User-agent: \*$/m.test(aiGroup));
   const optOut = (res) => res.headers.get('x-robots-tag') === 'noai, noimageai' && res.headers.get('tdm-reservation') === '1';
   check('pages and image files ask AI tools not to train on them', optOut(await anon.req('GET', '/feed.html')) && optOut(await fetch(BASE + '/images/og-image.png')));
+  const asBot = (url, userAgent) => fetch(BASE + url, { headers: { 'User-Agent': userAgent } });
+  const AI_BOTS = {
+    GPTBot: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.1; +https://openai.com/gptbot',
+    Bytespider: 'Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36 (compatible; Bytespider; spider-feedback@bytedance.com)',
+    ClaudeBot: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+  };
+  const ALLOWED_BOTS = {
+    Chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    Googlebot: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    Discordbot: 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)',
+    facebookexternalhit: 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'OAI-SearchBot': 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot',
+  };
+  const blockedEverywhere = [];
+  for (const [name, ua] of Object.entries(AI_BOTS)) {
+    for (const url of ['/', '/feed.html', '/api/feed', '/images/og-image.png']) {
+      if ((await asBot(url, ua)).status !== 403) blockedEverywhere.push(`${name} ${url}`);
+    }
+  }
+  check('AI training crawlers are turned away (403) from pages, the API and images', blockedEverywhere.length === 0, blockedEverywhere.join(', '));
+  check('AI training crawlers can still read robots.txt', (await asBot('/robots.txt', AI_BOTS.GPTBot)).status === 200);
+  const wronglyBlocked = [];
+  for (const [name, ua] of Object.entries(ALLOWED_BOTS)) {
+    for (const url of ['/', '/images/og-image.png']) {
+      if ((await asBot(url, ua)).status !== 200) wronglyBlocked.push(`${name} ${url}`);
+    }
+  }
+  check('browsers, search engines and link-preview bots are not blocked', wronglyBlocked.length === 0, wronglyBlocked.join(', '));
   check('the AI opt-out does not hide pages from search engines', !/noindex/i.test((await anon.req('GET', '/')).headers.get('x-robots-tag') || ''));
   check('robots.txt points to the sitemap', robots.text.includes(`Sitemap: ${BASE}/sitemap.xml`));
   const sitemap = await anon.req('GET', '/sitemap.xml');
