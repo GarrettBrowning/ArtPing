@@ -364,6 +364,7 @@ input[type="password"]:focus {
   font-size: 0.9rem;
 }
 
+.ai-protection h2,
 .ai-protection h3 {
   font-family: var(--font-display);
   font-size: 1.6rem;
@@ -408,8 +409,22 @@ input[type="password"]:focus {
 
 .ai-protection details[open] summary { margin-bottom: 10px; }
 
+/* Home page: welcome on the left, "We protect your Art from AI" on the right (below it on narrow screens) */
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(300px, 440px);
+  justify-content: space-between;
+  align-items: center;
+  gap: 48px;
+}
+
+.home-layout .ai-protection { font-size: 0.92rem; }
+
 @media (max-width: 860px) {
-  .upload-layout { grid-template-columns: 1fr; }
+  .upload-layout,
+  .home-layout { grid-template-columns: 1fr; }
+  .home-layout .hero { padding-bottom: 0; }
+  .home-layout .ai-protection { margin-bottom: 48px; }
 }
 
 .section-header {
