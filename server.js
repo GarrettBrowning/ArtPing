@@ -59,6 +59,10 @@ app.use((req, res, next) => {
     'X-Frame-Options': 'DENY',             // older browsers' version of frame-ancestors
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+    // Ask AI tools not to train on pages or art. Sent as a header (not a <meta> tag) so it also covers
+    // the image files themselves; image dataset tools like img2dataset check it. Search indexing is unaffected.
+    'X-Robots-Tag': 'noai, noimageai',
+    'tdm-reservation': '1',                // W3C TDMRep: text and data mining rights are reserved
   });
   if (isProduction) res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); // HTTPS only
   next();
@@ -94,9 +98,21 @@ app.use(async (req, res, next) => {
 // Pages search engines should list (private pages like Settings are left out)
 const SITEMAP_PATHS = ['/', '/feed.html', '/about.html', '/register.html', '/login.html'];
 
+// Crawlers that collect data for AI training. They are blocked from the whole site in robots.txt.
+// AI *search* crawlers (OAI-SearchBot, Claude-SearchBot, PerplexityBot) are left allowed so ArtPing
+// can still show up in AI search answers; Google-Extended blocks Gemini training, not Google Search.
+const AI_TRAINING_CRAWLERS = [
+  'GPTBot', 'ClaudeBot', 'anthropic-ai', 'Google-Extended', 'Applebot-Extended', 'CCBot',
+  'meta-externalagent', 'Bytespider', 'Amazonbot', 'cohere-training-data-crawler', 'Diffbot',
+  'ImagesiftBot', 'Omgilibot',
+];
+
 app.get('/robots.txt', (req, res) => {
   // robots.txt only asks well-behaved crawlers to stay away; it is not a security measure
   res.type('text/plain').send([
+    ...AI_TRAINING_CRAWLERS.map(bot => `User-agent: ${bot}`),
+    'Disallow: /',
+    '',
     'User-agent: *',
     'Disallow: /api/',
     'Disallow: /settings.html',

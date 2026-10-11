@@ -616,7 +616,16 @@ async function run() {
   const robots = await anon.req('GET', '/robots.txt');
   check('robots.txt is served as plain text', robots.status === 200 && /text\/plain/.test(robots.headers.get('content-type') || ''));
   check('robots.txt keeps crawlers out of /api/ and private pages', robots.text.includes('Disallow: /api/') && robots.text.includes('Disallow: /settings.html'));
-  check('robots.txt does not block the whole site', !/^Disallow:\s*\/\s*$/m.test(robots.text));
+  // robots.txt groups are separated by blank lines; the AI-training group blocks everything, the general one must not
+  const robotsGroups = robots.text.split(/\n\s*\n/);
+  const generalGroup = robotsGroups.find(g => /^User-agent: \*$/m.test(g)) || '';
+  const aiGroup = robotsGroups.find(g => /^User-agent: GPTBot$/m.test(g)) || '';
+  check('robots.txt does not block the whole site for ordinary crawlers', generalGroup !== '' && !/^Disallow:\s*\/\s*$/m.test(generalGroup));
+  check('robots.txt blocks AI training crawlers from the whole site', ['GPTBot', 'ClaudeBot', 'Google-Extended', 'CCBot'].every(bot => aiGroup.includes(`User-agent: ${bot}\n`))
+    && /^Disallow: \/$/m.test(aiGroup) && !/^User-agent: \*$/m.test(aiGroup));
+  const optOut = (res) => res.headers.get('x-robots-tag') === 'noai, noimageai' && res.headers.get('tdm-reservation') === '1';
+  check('pages and image files ask AI tools not to train on them', optOut(await anon.req('GET', '/feed.html')) && optOut(await fetch(BASE + '/images/og-image.png')));
+  check('the AI opt-out does not hide pages from search engines', !/noindex/i.test((await anon.req('GET', '/')).headers.get('x-robots-tag') || ''));
   check('robots.txt points to the sitemap', robots.text.includes(`Sitemap: ${BASE}/sitemap.xml`));
   const sitemap = await anon.req('GET', '/sitemap.xml');
   const locs = [...sitemap.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
