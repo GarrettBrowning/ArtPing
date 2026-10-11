@@ -6,7 +6,7 @@
 //   1. Starts a private copy of the server on port 3099 using a separate database (ArtPing_test),
 //      so your real data and your own running server are never touched.
 //   2. Creates test accounts and runs every check below against the real API.
-//   3. Shuts the server down, deletes the test database and any images it uploaded.
+//   3. Shuts the server down, deletes the test database and the temporary folder its images went to.
 //
 // Needs MongoDB running locally. Exit code is 0 when everything passes, 1 otherwise.
 
@@ -14,6 +14,7 @@ const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 const mongoose = require('mongoose');
 const sharp = require('sharp');
@@ -21,7 +22,8 @@ const sharp = require('sharp');
 sharp.cache(false); // don't keep image files open (Windows can't delete open files)
 
 const ROOT = path.join(__dirname, '..');
-const UPLOADS = path.join(ROOT, 'public', 'uploads');
+// Uploads go to a temporary folder outside the app (like a host's persistent disk), never public/uploads
+const UPLOADS = fs.mkdtempSync(path.join(os.tmpdir(), 'artping-test-uploads-'));
 const PORT = 3099;
 const BASE = `http://localhost:${PORT}`;
 const TEST_DB = 'ArtPing_test';
@@ -114,6 +116,7 @@ async function startServer() {
       SESSION_SECRET: crypto.randomBytes(32).toString('hex'),
       TRUST_PROXY: 'loopback', // lets the test fake visitor IPs with X-Forwarded-For
       APP_URL: BASE,
+      UPLOAD_DIR: UPLOADS,
       NODE_ENV: 'test',
       SMTP_HOST: '', // forces reset links to be printed so the test can read them
     },
@@ -139,6 +142,8 @@ async function cleanUp() {
   for (const file of createdFiles) {
     fs.promises.unlink(path.join(UPLOADS, path.basename(file))).catch(() => {});
   }
+  if (server) await new Promise(r => server.exitCode !== null ? r() : server.once('exit', r)); // Windows can't delete a folder the server still uses
+  fs.rmSync(UPLOADS, { recursive: true, force: true }); // the whole temporary folder
   if (mongoose.connection.readyState === 1 && mongoose.connection.name === TEST_DB) {
     await mongoose.connection.dropDatabase(); // only ever the _test database
   }
@@ -274,6 +279,10 @@ async function run() {
   check('stored under a random name', post && /^[0-9a-f-]{36}\.jpg$/.test(post.filename), post && post.filename);
   const savedMeta = await sharp(fs.readFileSync(path.join(UPLOADS, post.filename))).metadata();
   check('hidden data (EXIF / GPS location) is removed', !savedMeta.exif);
+  const served = await fetch(BASE + post.filepath);
+  check('images saved in UPLOAD_DIR are served at /uploads/ with the AI opt-out header', served.status === 200
+    && /image\/jpeg/.test(served.headers.get('content-type') || '') && served.headers.get('x-robots-tag') === 'noai, noimageai');
+  check('uploads go to UPLOAD_DIR, not the app folder', !fs.existsSync(path.join(ROOT, 'public', 'uploads', post.filename)));
   check('title and description are trimmed', post.title === 'Sec post' && post.description === 'about it');
   const renamed = await upload(owner, png, 'sneaky.jpg', 'image/jpeg');
   check('real format wins over the file name (PNG named .jpg saved as .png)', renamed.json && renamed.json.post.filename.endsWith('.png'));

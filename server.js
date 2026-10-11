@@ -23,6 +23,12 @@ const APP_URL = (process.env.APP_URL || `http://localhost:${port}`).replace(/\/$
 if (isProduction && !process.env.APP_URL) {
   console.warn('WARNING: APP_URL is not set. Link previews, canonical links, the sitemap and password reset emails will all use http://localhost. Set it to your real https:// address.');
 }
+// Folder for uploaded images. On a host, point it at a persistent disk (the app's own folder is
+// wiped on every redeploy). Images are always served at /uploads/... whichever folder holds them.
+const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'public', 'uploads'));
+if (isProduction && !process.env.UPLOAD_DIR) {
+  console.warn('WARNING: UPLOAD_DIR is not set. Uploaded images are saved inside the app folder and will be lost on the next deploy. Point it at your persistent disk.');
+}
 
 // Without a real secret anyone could forge login sessions, so refuse to start
 if (!process.env.SESSION_SECRET) {
@@ -136,7 +142,8 @@ app.get('/sitemap.xml', (req, res) => {
 // Browsers ask for /favicon.ico on their own; point them at our icon
 app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon-32.png'));
 
-// Serve static files from the 'public' directory
+// Uploaded images (UPLOAD_DIR may be outside the app, e.g. a persistent disk), then everything in 'public'
+app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.static(PUBLIC_DIR));
 // JSON only: the pages never send classic HTML forms, so other sites can't submit forms to the API
 app.use(express.json({ limit: '100kb' }));
@@ -479,7 +486,7 @@ async function deleteComment(comment) {
 //  4. The image is re-encoded, which strips hidden data (like GPS location in phone photos)
 //     and anything smuggled inside the file
 //  5. Saved under a random name with an extension that matches the real format
-const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
+//     (in UPLOAD_DIR, set near the top of this file)
 const POST_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const PFP_MAX_BYTES = 5 * 1024 * 1024;   // 5 MB
 const MAX_IMAGE_PIXELS = 50 * 1000 * 1000; // 50 megapixels
