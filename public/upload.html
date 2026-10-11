@@ -38,6 +38,8 @@
         <div class="server-message"></div>
       </div>
 
+      <div class="upload-layout">
+      <div class="upload-main">
       <p class="settings-logged-out show-signed-out">
         Sorry, you must be logged in to upload artwork. <a href="login.html">Log in</a>
       </p>
@@ -71,6 +73,47 @@
             <button type="submit" class="btn-primary">Upload</button>
           </div>
         </form>
+      </div>
+      </div>
+
+      <aside class="ai-protection" aria-labelledby="ai-protection-title">
+        <h3 id="ai-protection-title">Fight AI art theft</h3>
+        <p>Your art is yours. Here is what ArtPing does to keep AI companies from training on it, and what you can do too.</p>
+
+        <h4>What ArtPing does</h4>
+        <ul>
+          <li><strong>Blocks AI training crawlers.</strong> Bots that collect images for AI training (like OpenAI's GPTBot, Anthropic's ClaudeBot, Common Crawl and ByteDance's Bytespider) are told to stay out, and turned away if they visit anyway.</li>
+          <li><strong>Marks every image "do not train".</strong> Each image is sent with "noai" signals that AI tools are asked to respect.</li>
+          <li><strong>Strips hidden data.</strong> Location (GPS) and other hidden details in your files are removed when you upload.</li>
+        </ul>
+        <p class="ai-protection-note">No website can fully stop a scraper that pretends to be a normal visitor. That's why we also recommend protecting the image itself, before you upload it.</p>
+
+        <h4>Protect your art before uploading</h4>
+        <p><strong>Glaze</strong> protects your <em>style</em>: it makes small changes that are hard to see but stop AI from copying how you draw. <strong>Nightshade</strong> goes further and "poisons" your image for any AI trained on it without permission. Both are free, made by the University of Chicago.</p>
+
+        <details>
+          <summary>How to use Glaze</summary>
+          <ol>
+            <li>Download Glaze for free from <a href="https://glaze.cs.uchicago.edu/downloads.html" target="_blank" rel="noopener noreferrer">glaze.cs.uchicago.edu</a> (Windows, or Mac with macOS 13 or newer). It needs about 5 GB of memory; a graphics card makes it faster but isn't required.</li>
+            <li>No suitable computer? Ask for a free <strong>WebGlaze</strong> invite (it runs in your browser) by messaging <strong>@TheGlazeProject</strong> on Instagram or X.</li>
+            <li><strong>Finish your image first.</strong> Resize, crop and add your signature or watermark <em>before</em> glazing. ArtPing's limit is 10 MB, so size it down now if needed.</li>
+            <li>Open Glaze and select your image. Set <strong>Intensity</strong> (higher = stronger protection, but more visible changes) and <strong>Render quality</strong> (higher = better protection, but slower; the top setting can take up to an hour per image).</li>
+            <li>Click <strong>Preview</strong> to check the look, then <strong>Run</strong>. The glazed copy is saved to your output folder with the same file name. Keep your unglazed original somewhere safe and private.</li>
+            <li>Upload the glazed copy here. A <strong>PNG</strong> keeps the protection best. Never glaze the same image twice; to make it stronger, glaze your original again with higher settings.</li>
+          </ol>
+        </details>
+
+        <details>
+          <summary>How to use Nightshade (optional)</summary>
+          <ol>
+            <li>Download Nightshade for free from <a href="https://nightshade.cs.uchicago.edu/downloads.html" target="_blank" rel="noopener noreferrer">nightshade.cs.uchicago.edu</a>. It works much like Glaze: finish your image first, then select it, pick an <strong>Intensity</strong> and <strong>Render quality</strong>, and run it.</li>
+            <li><strong>Important:</strong> Nightshade on its own does <em>not</em> protect your style. Its makers advise against posting images with only Nightshade if you're worried about style copying. To use both, run <strong>Nightshade first, then Glaze</strong> on the result (see their <a href="https://nightshade.cs.uchicago.edu/userguide.html" target="_blank" rel="noopener noreferrer">user guide</a>).</li>
+            <li>Its changes are easier to see on flat colors and smooth backgrounds. A low intensity setting is available if that matters for your piece.</li>
+          </ol>
+        </details>
+
+        <p class="ai-protection-note">Glaze and Nightshade are made by the Glaze Project at the University of Chicago; ArtPing isn't connected to them. They make AI training on your work much harder, but no tool is permanent protection.</p>
+      </aside>
       </div>
     </main>
 

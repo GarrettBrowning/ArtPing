@@ -337,6 +337,81 @@ input[type="password"]:focus {
   font-weight: 600;
 }
 
+/* Upload form on the left, "Fight AI art theft" on the right (below it on narrow screens) */
+.upload-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.upload-main {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+
+.ai-protection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+}
+
+.ai-protection h3 {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ai-protection h4 {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-top: 8px;
+}
+
+.ai-protection ul,
+.ai-protection ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.ai-protection a { text-decoration: underline; }
+
+.ai-protection-note {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.ai-protection details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.ai-protection summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.ai-protection details[open] summary { margin-bottom: 10px; }
+
+@media (max-width: 860px) {
+  .upload-layout { grid-template-columns: 1fr; }
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;
